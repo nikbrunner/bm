@@ -20,7 +20,7 @@ func (a App) renderView() string {
 	if paneWidth < 20 {
 		paneWidth = 20
 	}
-	paneHeight := a.height - 6 // account for help bar and app padding
+	paneHeight := a.height - 5 // account for help bar (3 lines), app top padding (1), and borders
 	if paneHeight < 5 {
 		paneHeight = 5
 	}
@@ -131,8 +131,7 @@ func (a App) renderModal() string {
 func (a App) renderParentPane(width, height int) string {
 	var content strings.Builder
 
-	// Account for border (2 lines) when calculating visible items
-	visibleHeight := height - 2
+	visibleHeight := height
 	if visibleHeight < 1 {
 		visibleHeight = 1
 	}
@@ -188,8 +187,7 @@ func (a App) renderParentPane(width, height int) string {
 func (a App) renderCurrentPane(width, height int) string {
 	var content strings.Builder
 
-	// Account for border (2 lines) when calculating visible items
-	visibleHeight := height - 2
+	visibleHeight := height
 	if visibleHeight < 1 {
 		visibleHeight = 1
 	}
@@ -224,8 +222,7 @@ func (a App) renderCurrentPane(width, height int) string {
 func (a App) renderPreviewPane(width, height int) string {
 	var content strings.Builder
 
-	// Account for border (2 lines) when calculating visible items
-	visibleHeight := height - 2
+	visibleHeight := height
 	if visibleHeight < 1 {
 		visibleHeight = 1
 	}
@@ -478,7 +475,7 @@ func (a App) renderFuzzyItem(match fuzzyMatch, selected bool, maxWidth int) stri
 }
 
 func (a App) renderHelpBar() string {
-	// Build status indicators
+	// Build status line
 	var status strings.Builder
 
 	// Sort mode indicator
@@ -504,9 +501,18 @@ func (a App) renderHelpBar() string {
 		status.WriteString("  " + statusStyle.Render(a.statusMessage))
 	}
 
-	help := "j/k: move  l: open  /: find  s: sort  c: confirm  a: add  e: edit  d: del  x: cut  p: paste  ?: help  q: quit"
+	// Hints line
+	hints := "j/k: move  l: open  /: find  s: sort  c: confirm  a: add  e: edit  d: del  x: cut  p: paste  ?: help  q: quit"
 
-	return a.styles.Help.Render(status.String() + "  " + help)
+	// Style without padding for individual lines
+	lineStyle := lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#666666", Dark: "#888888"})
+
+	// Two lines: status on top, hints below
+	content := lineStyle.Render(status.String()) + "\n" + lineStyle.Render(hints)
+
+	// Only pad top, not bottom
+	wrapperStyle := lipgloss.NewStyle().PaddingTop(1)
+	return wrapperStyle.Render(content)
 }
 
 // renderHelpOverlay renders the help overlay.

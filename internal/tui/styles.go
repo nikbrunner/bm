@@ -28,7 +28,9 @@ func DefaultStyles() Styles {
 
 	return Styles{
 		App: lipgloss.NewStyle().
-			Padding(1, 2),
+			PaddingTop(1).
+			PaddingLeft(2).
+			PaddingRight(2),
 
 		Pane: lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
