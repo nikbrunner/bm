@@ -221,13 +221,27 @@ func (a App) renderModal() string {
 		content.WriteString(a.styles.Help.Render("Enter: save • Esc: cancel"))
 
 	case ModeConfirmDelete:
-		folder := a.store.GetFolderByID(a.editItemID)
-		folderName := "this folder"
-		if folder != nil {
-			folderName = "\"" + folder.Name + "\""
+		// Determine action and item type
+		action := "Delete"
+		if a.cutMode {
+			action = "Cut"
 		}
-		title.WriteString("Delete Folder?\n\n")
-		content.WriteString("Are you sure you want to delete " + folderName + "?\n\n")
+
+		// Try folder first, then bookmark
+		var itemType, itemName string
+		if folder := a.store.GetFolderByID(a.editItemID); folder != nil {
+			itemType = "Folder"
+			itemName = folder.Name
+		} else if bookmark := a.store.GetBookmarkByID(a.editItemID); bookmark != nil {
+			itemType = "Bookmark"
+			itemName = bookmark.Title
+		} else {
+			itemType = "Item"
+			itemName = "this item"
+		}
+
+		title.WriteString(action + " " + itemType + "?\n\n")
+		content.WriteString("Are you sure you want to " + strings.ToLower(action) + " \"" + itemName + "\"?\n\n")
 		content.WriteString(a.styles.Help.Render("Enter: confirm • Esc: cancel"))
 
 	case ModeSearch:
