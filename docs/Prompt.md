@@ -184,31 +184,32 @@ Export bookmarks to standard Netscape bookmark HTML format (compatible with all 
 
 ## Progress Tracking
 
-### Phase 1: Foundation
-- [ ] Project setup (Go module, dependencies)
-- [ ] Data model structs
-- [ ] JSON read/write with auto-save
-- [ ] UUID generation for IDs
+### Phase 1: Foundation ✅
+- [x] Project setup (Go module, dependencies)
+- [x] Data model structs
+- [x] JSON read/write with auto-save
+- [x] UUID generation for IDs
 
-### Phase 2: Core TUI
-- [ ] Basic bubbletea app structure
-- [ ] Miller column layout (3 panes)
-- [ ] Folder/bookmark rendering
-- [ ] `j/k` navigation within list
-- [ ] `h/l` navigation between folders
-- [ ] `gg/G` jump to top/bottom
-- [ ] Cursor/selection highlighting
-- [ ] Preview pane (title, URL, tags, dates)
+### Phase 2: Core TUI ✅
+- [x] Basic bubbletea app structure
+- [x] Miller column layout (3 panes)
+- [x] Folder/bookmark rendering
+- [x] `j/k` navigation within list
+- [x] `h/l` navigation between folders
+- [x] `gg/G` jump to top/bottom
+- [x] Cursor/selection highlighting
+- [x] Preview pane (title, URL, tags, dates)
 
-### Phase 3: CRUD Operations
-- [ ] `a` - Add bookmark modal (title, URL, tags input)
-- [ ] `A` - Add folder modal
-- [ ] `e` - Edit selected item
-- [ ] `dd` - Cut (delete + yank to buffer)
-- [ ] `yy` - Yank to buffer
-- [ ] `p/P` - Paste after/before
-- [ ] `t` - Edit tags
-- [ ] Delete folder confirmation prompt
+### Phase 3: CRUD Operations ✅
+- [x] `a` - Add bookmark modal (title, URL, tags input)
+- [x] `A` - Add folder modal
+- [x] `e` - Edit selected item
+- [x] `dd` - Cut (delete + yank to buffer)
+- [x] `yy` - Yank to buffer
+- [x] `p/P` - Paste after/before
+- [x] `t` - Edit tags
+- [x] Delete folder confirmation prompt
+- [x] Persist changes on exit
 
 ### Phase 4: Search & Sort
 - [ ] `/` - Fuzzy filter current folder
@@ -220,8 +221,8 @@ Export bookmarks to standard Netscape bookmark HTML format (compatible with all 
 - [ ] `Y` - Yank URL to system clipboard
 - [ ] Update `visitedAt` on open
 - [ ] `?` - Help overlay
-- [ ] `q`/`Esc` - Quit handling
-- [ ] Empty state UI
+- [x] `q`/`Esc` - Quit handling
+- [x] Empty state UI
 - [ ] Error handling & user feedback
 
 ### Phase 6: CLI & Export

@@ -1,8 +1,13 @@
-# Plan: `bm` - Vim-style TUI Bookmark Manager (Phase 1-2)
+# Plan: `bm` - Vim-style TUI Bookmark Manager
 
 ## Scope
-- **Phase 1**: Foundation (project setup, data model, JSON storage)
-- **Phase 2**: Core TUI (Miller columns, vim navigation)
+- **Phase 1**: Foundation (project setup, data model, JSON storage) ✅
+- **Phase 2**: Core TUI (Miller columns, vim navigation) ✅
+- **Phase 3**: CRUD Operations (add, edit, delete, yank, paste) ✅
+- **Phase 4**: Search & Sort
+- **Phase 5**: Actions & Polish
+- **Phase 6**: CLI & Export
+- **Phase 7**: Final Polish
 - **Approach**: TDD - tests first, then implementation
 
 ---
@@ -58,6 +63,22 @@
 | 10 | App model + navigation tests | `internal/tui/app.go`, `app_test.go` | :white_check_mark: |
 | 11 | View rendering (Miller columns) | `internal/tui/view.go` | :white_check_mark: |
 | 12 | Main entry point | `cmd/bm/main.go` | :white_check_mark: |
+
+### Phase 3: CRUD Operations (COMPLETE)
+
+| # | Task | Key | Status |
+|---|------|-----|--------|
+| 13 | Yank to buffer | `yy` | :white_check_mark: |
+| 14 | Cut/delete with yank | `dd` | :white_check_mark: |
+| 15 | Paste after/before | `p`/`P` | :white_check_mark: |
+| 16 | Add bookmark modal | `a` | :white_check_mark: |
+| 17 | Add folder modal | `A` | :white_check_mark: |
+| 18 | Edit selected item | `e` | :white_check_mark: |
+| 19 | Edit tags | `t` | :white_check_mark: |
+| 20 | Delete folder confirmation | `dd` on folder | :white_check_mark: |
+| 21 | Persist changes on exit | auto | :white_check_mark: |
+
+**Tests:** 38 passing (TDD approach)
 
 ---
 
