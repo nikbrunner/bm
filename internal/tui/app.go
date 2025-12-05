@@ -94,6 +94,9 @@ type App struct {
 	editItemID string // ID of item being edited (folder or bookmark)
 	cutMode    bool   // true = cut (buffer), false = delete (no buffer)
 
+	// Settings
+	confirmDelete bool // true = ask confirmation before delete (default true)
+
 	// Status message (for user feedback)
 	statusMessage string
 
@@ -154,6 +157,7 @@ func NewApp(params AppParams) App {
 		urlInput:        urlInput,
 		tagsInput:       tagsInput,
 		searchInput:     searchInput,
+		confirmDelete:   true,
 		width:           80,
 		height:          24,
 	}
@@ -316,6 +320,11 @@ func (a App) StatusMessage() string {
 // setStatus sets the status message.
 func (a *App) setStatus(msg string) {
 	a.statusMessage = msg
+}
+
+// SetConfirmDelete sets the confirmDelete flag (for testing).
+func (a *App) SetConfirmDelete(confirm bool) {
+	a.confirmDelete = confirm
 }
 
 // FuzzyMatches returns the current fuzzy match results.
@@ -508,6 +517,15 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.sortMode = (a.sortMode + 1) % 4
 			a.refreshItems()
 
+		case key.Matches(msg, a.keys.ToggleConfirm):
+			// Toggle delete confirmation
+			a.confirmDelete = !a.confirmDelete
+			if a.confirmDelete {
+				a.setStatus("Confirmations ON")
+			} else {
+				a.setStatus("Confirmations OFF")
+			}
+
 		case key.Matches(msg, a.keys.Search):
 			// Open fuzzy finder mode with GLOBAL search
 			a.mode = ModeSearch
@@ -578,7 +596,7 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return a, nil
 		case tea.KeyEnter:
 			// Confirm deletion
-			a.confirmDeleteFolder()
+			a.confirmDeleteItem()
 			a.mode = ModeNormal
 			return a, nil
 		}
@@ -828,81 +846,110 @@ func (a *App) yankCurrentItem() {
 }
 
 // cutCurrentItem copies the current item to yank buffer and deletes it.
-// For folders, it shows a confirmation dialog instead of deleting immediately.
+// Shows confirmation dialog if confirmDelete is enabled.
 func (a *App) cutCurrentItem() {
 	if len(a.items) == 0 || a.cursor >= len(a.items) {
 		return
 	}
 
 	item := a.items[a.cursor]
+	a.cutMode = true
 
-	// For folders, show confirmation dialog
-	if item.IsFolder() {
-		a.editItemID = item.Folder.ID
-		a.cutMode = true
+	// Show confirmation if enabled
+	if a.confirmDelete {
+		if item.IsFolder() {
+			a.editItemID = item.Folder.ID
+		} else {
+			a.editItemID = item.Bookmark.ID
+		}
 		a.mode = ModeConfirmDelete
 		return
 	}
 
-	// For bookmarks, cut immediately (delete + buffer)
-	title := item.Bookmark.Title
-	a.yankedItem = &item
-	a.store.RemoveBookmarkByID(item.Bookmark.ID)
+	// No confirmation - cut immediately
+	if item.IsFolder() {
+		a.yankedItem = &item
+		a.store.RemoveFolderByID(item.Folder.ID)
+		a.setStatus("Cut: " + item.Folder.Name)
+	} else {
+		a.yankedItem = &item
+		a.store.RemoveBookmarkByID(item.Bookmark.ID)
+		a.setStatus("Cut: " + item.Bookmark.Title)
+	}
 
-	// Refresh items and adjust cursor
 	a.refreshItems()
 	if a.cursor >= len(a.items) && a.cursor > 0 {
 		a.cursor--
 	}
-	a.setStatus("Cut: " + title)
 }
 
 // deleteCurrentItem deletes the current item without copying to yank buffer.
-// For folders, it shows a confirmation dialog instead of deleting immediately.
+// Shows confirmation dialog if confirmDelete is enabled.
 func (a *App) deleteCurrentItem() {
 	if len(a.items) == 0 || a.cursor >= len(a.items) {
 		return
 	}
 
 	item := a.items[a.cursor]
+	a.cutMode = false
 
-	// For folders, show confirmation dialog
-	if item.IsFolder() {
-		a.editItemID = item.Folder.ID
-		a.cutMode = false
+	// Show confirmation if enabled
+	if a.confirmDelete {
+		if item.IsFolder() {
+			a.editItemID = item.Folder.ID
+		} else {
+			a.editItemID = item.Bookmark.ID
+		}
 		a.mode = ModeConfirmDelete
 		return
 	}
 
-	// For bookmarks, delete immediately (no buffer)
-	title := item.Bookmark.Title
-	a.store.RemoveBookmarkByID(item.Bookmark.ID)
+	// No confirmation - delete immediately
+	if item.IsFolder() {
+		a.store.RemoveFolderByID(item.Folder.ID)
+		a.setStatus("Deleted: " + item.Folder.Name)
+	} else {
+		a.store.RemoveBookmarkByID(item.Bookmark.ID)
+		a.setStatus("Deleted: " + item.Bookmark.Title)
+	}
 
-	// Refresh items and adjust cursor
 	a.refreshItems()
 	if a.cursor >= len(a.items) && a.cursor > 0 {
 		a.cursor--
 	}
-	a.setStatus("Deleted: " + title)
 }
 
-// confirmDeleteFolder performs the actual folder deletion after confirmation.
-func (a *App) confirmDeleteFolder() {
+// confirmDeleteItem performs the actual deletion after confirmation.
+// Handles both folders and bookmarks.
+func (a *App) confirmDeleteItem() {
+	var title string
+
+	// Try as folder first
 	folder := a.store.GetFolderByID(a.editItemID)
-	if folder == nil {
-		return
+	if folder != nil {
+		title = folder.Name
+		if a.cutMode {
+			// Make a copy before deleting
+			folderCopy := *folder
+			item := Item{Kind: ItemFolder, Folder: &folderCopy}
+			a.yankedItem = &item
+		}
+		a.store.RemoveFolderByID(a.editItemID)
+	} else {
+		// Try as bookmark
+		bookmark := a.store.GetBookmarkByID(a.editItemID)
+		if bookmark == nil {
+			return
+		}
+		title = bookmark.Title
+		if a.cutMode {
+			// Make a copy before deleting
+			bookmarkCopy := *bookmark
+			item := Item{Kind: ItemBookmark, Bookmark: &bookmarkCopy}
+			a.yankedItem = &item
+		}
+		a.store.RemoveBookmarkByID(a.editItemID)
 	}
-
-	title := folder.Name
-
-	// Only store in yank buffer if this was a cut operation
-	if a.cutMode {
-		item := Item{Kind: ItemFolder, Folder: folder}
-		a.yankedItem = &item
-	}
-
-	// Delete the folder
-	a.store.RemoveFolderByID(a.editItemID)
 
 	// Refresh items and adjust cursor
 	a.refreshItems()

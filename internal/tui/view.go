@@ -437,13 +437,21 @@ func (a App) renderHelpBar() string {
 	}
 	status.WriteString("[sort: " + sortLabels[a.sortMode] + "]")
 
+	// Confirm mode indicator
+	if a.confirmDelete {
+		status.WriteString(" [confirm: on]")
+	} else {
+		warnStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Bold(true)
+		status.WriteString(" " + warnStyle.Render("[confirm: off]"))
+	}
+
 	// Status message (if any)
 	if a.statusMessage != "" {
 		statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Bold(true)
 		status.WriteString("  " + statusStyle.Render(a.statusMessage))
 	}
 
-	help := "j/k: move  l/Enter: open  /: find  s: sort  a: add  e: edit  y: yank  d: del  x: cut  p: paste  ?: help  q: quit"
+	help := "j/k: move  l: open  /: find  s: sort  c: confirm  a: add  e: edit  d: del  x: cut  p: paste  ?: help  q: quit"
 
 	return a.styles.Help.Render(status.String() + "  " + help)
 }
@@ -482,6 +490,7 @@ func (a App) renderHelpOverlay() string {
 	content.WriteString("  Y         Yank URL to clipboard\n")
 	content.WriteString("  /         Global search\n")
 	content.WriteString("  s         Cycle sort mode\n")
+	content.WriteString("  c         Toggle delete confirmations\n")
 	content.WriteString("\n")
 
 	// CRUD

@@ -356,7 +356,7 @@ func TestApp_Yank_Y(t *testing.T) {
 }
 
 func TestApp_Cut_X_Bookmark(t *testing.T) {
-	// Test cut with bookmarks (which delete immediately without confirmation)
+	// Test cut with bookmarks (shows confirmation, then deletes + buffers)
 	store := &model.Store{
 		Folders: []model.Folder{},
 		Bookmarks: []model.Bookmark{
@@ -367,8 +367,17 @@ func TestApp_Cut_X_Bookmark(t *testing.T) {
 
 	app := tui.NewApp(tui.AppParams{Store: store})
 
-	// Press x to cut
+	// Press x to cut (shows confirmation)
 	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	app = updated.(tui.App)
+
+	// Should be in confirm mode
+	if app.Mode() != tui.ModeConfirmDelete {
+		t.Fatalf("expected ModeConfirmDelete, got %d", app.Mode())
+	}
+
+	// Press Enter to confirm
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	app = updated.(tui.App)
 
 	// Should have yanked the first bookmark
@@ -392,7 +401,7 @@ func TestApp_Cut_X_Bookmark(t *testing.T) {
 }
 
 func TestApp_Delete_D_Bookmark(t *testing.T) {
-	// Test delete with bookmarks (deletes without buffering)
+	// Test delete with bookmarks (shows confirmation, then deletes without buffering)
 	store := &model.Store{
 		Folders: []model.Folder{},
 		Bookmarks: []model.Bookmark{
@@ -403,8 +412,17 @@ func TestApp_Delete_D_Bookmark(t *testing.T) {
 
 	app := tui.NewApp(tui.AppParams{Store: store})
 
-	// Press d to delete (no buffer)
+	// Press d to delete (shows confirmation)
 	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	app = updated.(tui.App)
+
+	// Should be in confirm mode
+	if app.Mode() != tui.ModeConfirmDelete {
+		t.Fatalf("expected ModeConfirmDelete, got %d", app.Mode())
+	}
+
+	// Press Enter to confirm
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	app = updated.(tui.App)
 
 	// Should NOT have yanked (delete doesn't buffer)
@@ -1139,7 +1157,7 @@ func TestApp_DeleteFolder_CancelWithEsc(t *testing.T) {
 	}
 }
 
-func TestApp_DeleteBookmark_NoConfirmation(t *testing.T) {
+func TestApp_DeleteBookmark_WithConfirmOff(t *testing.T) {
 	store := &model.Store{
 		Folders: []model.Folder{},
 		Bookmarks: []model.Bookmark{
@@ -1149,13 +1167,16 @@ func TestApp_DeleteBookmark_NoConfirmation(t *testing.T) {
 
 	app := tui.NewApp(tui.AppParams{Store: store})
 
-	// Press d on a bookmark (deletes immediately without confirmation)
+	// Turn off confirmation
+	app.SetConfirmDelete(false)
+
+	// Press d on a bookmark (deletes immediately when confirm is off)
 	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
 	app = updated.(tui.App)
 
-	// Should delete immediately (no confirmation for bookmarks)
+	// Should delete immediately (no confirmation)
 	if app.Mode() != tui.ModeNormal {
-		t.Error("bookmarks should delete immediately without confirmation")
+		t.Error("with confirm off, should delete immediately")
 	}
 
 	// Bookmark should be deleted
@@ -1877,8 +1898,12 @@ func TestApp_StatusMessage_AfterDelete(t *testing.T) {
 
 	app := tui.NewApp(tui.AppParams{Store: store})
 
-	// Press d to delete
+	// Press d to delete (shows confirmation)
 	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	app = updated.(tui.App)
+
+	// Press Enter to confirm
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	app = updated.(tui.App)
 
 	// Should have status message

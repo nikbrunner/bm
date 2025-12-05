@@ -19,8 +19,9 @@ type KeyMap struct {
 	AddFolder   key.Binding
 	Edit        key.Binding
 	EditTags    key.Binding
-	Sort        key.Binding
-	Search      key.Binding
+	Sort          key.Binding
+	ToggleConfirm key.Binding
+	Search        key.Binding
 	Open        key.Binding
 	YankURL     key.Binding
 	Help        key.Binding
@@ -93,6 +94,10 @@ func DefaultKeyMap() KeyMap {
 		Sort: key.NewBinding(
 			key.WithKeys("s"),
 			key.WithHelp("s", "cycle sort"),
+		),
+		ToggleConfirm: key.NewBinding(
+			key.WithKeys("c"),
+			key.WithHelp("c", "toggle confirm"),
 		),
 		Search: key.NewBinding(
 			key.WithKeys("/"),
