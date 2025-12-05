@@ -378,13 +378,14 @@ func TestApp_Yank_SingleY_Cancels(t *testing.T) {
 	}
 }
 
-func TestApp_Cut_DD(t *testing.T) {
+func TestApp_Cut_DD_Bookmark(t *testing.T) {
+	// Test cut with bookmarks (which delete immediately without confirmation)
 	store := &model.Store{
-		Folders: []model.Folder{
-			{ID: "f1", Name: "Folder 1", ParentID: nil},
-			{ID: "f2", Name: "Folder 2", ParentID: nil},
+		Folders: []model.Folder{},
+		Bookmarks: []model.Bookmark{
+			{ID: "b1", Title: "Bookmark 1", URL: "https://1.com", FolderID: nil},
+			{ID: "b2", Title: "Bookmark 2", URL: "https://2.com", FolderID: nil},
 		},
-		Bookmarks: []model.Bookmark{},
 	}
 
 	app := tui.NewApp(tui.AppParams{Store: store})
@@ -395,13 +396,13 @@ func TestApp_Cut_DD(t *testing.T) {
 	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
 	app = updated.(tui.App)
 
-	// Should have yanked the first folder
+	// Should have yanked the first bookmark
 	yanked := app.YankedItem()
 	if yanked == nil {
 		t.Fatal("expected item to be yanked after cut")
 	}
-	if !yanked.IsFolder() || yanked.Folder.ID != "f1" {
-		t.Error("expected folder f1 to be in yank buffer")
+	if yanked.IsFolder() || yanked.Bookmark.ID != "b1" {
+		t.Error("expected bookmark b1 to be in yank buffer")
 	}
 
 	// Item should be deleted
@@ -409,9 +410,9 @@ func TestApp_Cut_DD(t *testing.T) {
 		t.Errorf("cut should delete item, expected 1 item, got %d", len(app.Items()))
 	}
 
-	// Remaining item should be f2
-	if app.Items()[0].Folder.ID != "f2" {
-		t.Error("expected f2 to remain after cutting f1")
+	// Remaining item should be b2
+	if app.Items()[0].Bookmark.ID != "b2" {
+		t.Error("expected b2 to remain after cutting b1")
 	}
 }
 
@@ -687,5 +688,449 @@ func TestApp_AddFolder_EmptyName(t *testing.T) {
 	// No folder should be added
 	if len(app.Items()) != 0 {
 		t.Error("no folder should be added with empty name")
+	}
+}
+
+// === CRUD Tests: Edit ===
+
+func TestApp_EditFolder_OpenModal(t *testing.T) {
+	store := &model.Store{
+		Folders: []model.Folder{
+			{ID: "f1", Name: "Original Name", ParentID: nil},
+		},
+		Bookmarks: []model.Bookmark{},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+
+	// Press 'e' to open edit modal
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	app = updated.(tui.App)
+
+	// Should be in edit folder mode
+	if app.Mode() != tui.ModeEditFolder {
+		t.Errorf("expected ModeEditFolder, got %d", app.Mode())
+	}
+}
+
+func TestApp_EditFolder_Cancel(t *testing.T) {
+	store := &model.Store{
+		Folders: []model.Folder{
+			{ID: "f1", Name: "Original Name", ParentID: nil},
+		},
+		Bookmarks: []model.Bookmark{},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+
+	// Open edit modal
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	app = updated.(tui.App)
+
+	// Press Esc to cancel
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	app = updated.(tui.App)
+
+	// Should be back in normal mode
+	if app.Mode() != tui.ModeNormal {
+		t.Error("expected normal mode after Esc")
+	}
+
+	// Folder name should be unchanged
+	if app.Items()[0].Folder.Name != "Original Name" {
+		t.Error("folder name should not change after cancel")
+	}
+}
+
+func TestApp_EditFolder_Submit(t *testing.T) {
+	store := &model.Store{
+		Folders: []model.Folder{
+			{ID: "f1", Name: "Original", ParentID: nil},
+		},
+		Bookmarks: []model.Bookmark{},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+
+	// Open edit modal
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	app = updated.(tui.App)
+
+	// Clear existing text and type new name
+	// Select all and delete (Ctrl+U clears line in textinput)
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyCtrlU})
+	app = updated.(tui.App)
+
+	// Type new name
+	for _, r := range "New Name" {
+		updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		app = updated.(tui.App)
+	}
+
+	// Press Enter to submit
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	app = updated.(tui.App)
+
+	// Should be back in normal mode
+	if app.Mode() != tui.ModeNormal {
+		t.Errorf("expected normal mode after submit, got %d", app.Mode())
+	}
+
+	// Folder should have new name
+	if app.Items()[0].Folder.Name != "New Name" {
+		t.Errorf("expected folder name 'New Name', got %q", app.Items()[0].Folder.Name)
+	}
+
+	// Should still be the same folder (same ID)
+	if app.Items()[0].Folder.ID != "f1" {
+		t.Error("folder ID should not change")
+	}
+}
+
+func TestApp_EditBookmark_OpenModal(t *testing.T) {
+	store := &model.Store{
+		Folders: []model.Folder{},
+		Bookmarks: []model.Bookmark{
+			{ID: "b1", Title: "Original Title", URL: "https://original.com", FolderID: nil},
+		},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+
+	// Press 'e' to open edit modal
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	app = updated.(tui.App)
+
+	// Should be in edit bookmark mode
+	if app.Mode() != tui.ModeEditBookmark {
+		t.Errorf("expected ModeEditBookmark, got %d", app.Mode())
+	}
+}
+
+func TestApp_EditBookmark_Submit(t *testing.T) {
+	store := &model.Store{
+		Folders: []model.Folder{},
+		Bookmarks: []model.Bookmark{
+			{ID: "b1", Title: "Old Title", URL: "https://old.com", FolderID: nil},
+		},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+
+	// Open edit modal
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	app = updated.(tui.App)
+
+	// Clear and type new title
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyCtrlU})
+	app = updated.(tui.App)
+	for _, r := range "New Title" {
+		updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		app = updated.(tui.App)
+	}
+
+	// Tab to URL field
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyTab})
+	app = updated.(tui.App)
+
+	// Clear and type new URL
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyCtrlU})
+	app = updated.(tui.App)
+	for _, r := range "https://new.com" {
+		updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		app = updated.(tui.App)
+	}
+
+	// Press Enter to submit
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	app = updated.(tui.App)
+
+	// Should be back in normal mode
+	if app.Mode() != tui.ModeNormal {
+		t.Errorf("expected normal mode after submit, got %d", app.Mode())
+	}
+
+	// Bookmark should have new values
+	if app.Items()[0].Bookmark.Title != "New Title" {
+		t.Errorf("expected title 'New Title', got %q", app.Items()[0].Bookmark.Title)
+	}
+	if app.Items()[0].Bookmark.URL != "https://new.com" {
+		t.Errorf("expected URL 'https://new.com', got %q", app.Items()[0].Bookmark.URL)
+	}
+
+	// Should still be the same bookmark (same ID)
+	if app.Items()[0].Bookmark.ID != "b1" {
+		t.Error("bookmark ID should not change")
+	}
+}
+
+func TestApp_Edit_EmptyList(t *testing.T) {
+	store := &model.Store{
+		Folders:   []model.Folder{},
+		Bookmarks: []model.Bookmark{},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+
+	// Press 'e' on empty list
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	app = updated.(tui.App)
+
+	// Should stay in normal mode (nothing to edit)
+	if app.Mode() != tui.ModeNormal {
+		t.Error("pressing 'e' on empty list should do nothing")
+	}
+}
+
+// === CRUD Tests: Edit Tags ===
+
+func TestApp_EditTags_OpenModal(t *testing.T) {
+	store := &model.Store{
+		Folders: []model.Folder{},
+		Bookmarks: []model.Bookmark{
+			{ID: "b1", Title: "Test", URL: "https://test.com", FolderID: nil, Tags: []string{"old", "tags"}},
+		},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+
+	// Press 't' to open edit tags modal
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	app = updated.(tui.App)
+
+	// Should be in edit tags mode
+	if app.Mode() != tui.ModeEditTags {
+		t.Errorf("expected ModeEditTags, got %d", app.Mode())
+	}
+}
+
+func TestApp_EditTags_OnFolder(t *testing.T) {
+	store := &model.Store{
+		Folders: []model.Folder{
+			{ID: "f1", Name: "Folder", ParentID: nil},
+		},
+		Bookmarks: []model.Bookmark{},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+
+	// Press 't' on a folder
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	app = updated.(tui.App)
+
+	// Should stay in normal mode (folders don't have tags)
+	if app.Mode() != tui.ModeNormal {
+		t.Error("pressing 't' on folder should do nothing")
+	}
+}
+
+func TestApp_EditTags_Cancel(t *testing.T) {
+	store := &model.Store{
+		Folders: []model.Folder{},
+		Bookmarks: []model.Bookmark{
+			{ID: "b1", Title: "Test", URL: "https://test.com", FolderID: nil, Tags: []string{"original"}},
+		},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+
+	// Open tags modal
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	app = updated.(tui.App)
+
+	// Press Esc to cancel
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	app = updated.(tui.App)
+
+	// Should be back in normal mode
+	if app.Mode() != tui.ModeNormal {
+		t.Error("expected normal mode after Esc")
+	}
+
+	// Tags should be unchanged
+	if len(app.Items()[0].Bookmark.Tags) != 1 || app.Items()[0].Bookmark.Tags[0] != "original" {
+		t.Error("tags should not change after cancel")
+	}
+}
+
+func TestApp_EditTags_Submit(t *testing.T) {
+	store := &model.Store{
+		Folders: []model.Folder{},
+		Bookmarks: []model.Bookmark{
+			{ID: "b1", Title: "Test", URL: "https://test.com", FolderID: nil, Tags: []string{"old"}},
+		},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+
+	// Open tags modal
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	app = updated.(tui.App)
+
+	// Clear and type new tags (comma-separated)
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyCtrlU})
+	app = updated.(tui.App)
+	for _, r := range "new, tags, here" {
+		updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		app = updated.(tui.App)
+	}
+
+	// Press Enter to submit
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	app = updated.(tui.App)
+
+	// Should be back in normal mode
+	if app.Mode() != tui.ModeNormal {
+		t.Errorf("expected normal mode after submit, got %d", app.Mode())
+	}
+
+	// Tags should be updated
+	tags := app.Items()[0].Bookmark.Tags
+	if len(tags) != 3 {
+		t.Fatalf("expected 3 tags, got %d: %v", len(tags), tags)
+	}
+	if tags[0] != "new" || tags[1] != "tags" || tags[2] != "here" {
+		t.Errorf("expected tags [new, tags, here], got %v", tags)
+	}
+}
+
+func TestApp_EditTags_EmptyList(t *testing.T) {
+	store := &model.Store{
+		Folders:   []model.Folder{},
+		Bookmarks: []model.Bookmark{},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+
+	// Press 't' on empty list
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	app = updated.(tui.App)
+
+	// Should stay in normal mode
+	if app.Mode() != tui.ModeNormal {
+		t.Error("pressing 't' on empty list should do nothing")
+	}
+}
+
+// === CRUD Tests: Delete Folder Confirmation ===
+
+func TestApp_DeleteFolder_ShowsConfirmation(t *testing.T) {
+	store := &model.Store{
+		Folders: []model.Folder{
+			{ID: "f1", Name: "My Folder", ParentID: nil},
+		},
+		Bookmarks: []model.Bookmark{},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+
+	// Press dd on a folder
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	app = updated.(tui.App)
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	app = updated.(tui.App)
+
+	// Should be in confirm delete mode
+	if app.Mode() != tui.ModeConfirmDelete {
+		t.Errorf("expected ModeConfirmDelete, got %d", app.Mode())
+	}
+
+	// Folder should still exist (not deleted yet)
+	if len(app.Items()) != 1 {
+		t.Error("folder should not be deleted until confirmed")
+	}
+}
+
+func TestApp_DeleteFolder_ConfirmWithEnter(t *testing.T) {
+	store := &model.Store{
+		Folders: []model.Folder{
+			{ID: "f1", Name: "My Folder", ParentID: nil},
+		},
+		Bookmarks: []model.Bookmark{},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+
+	// Press dd to open confirmation
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	app = updated.(tui.App)
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	app = updated.(tui.App)
+
+	// Press Enter to confirm
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	app = updated.(tui.App)
+
+	// Should be back in normal mode
+	if app.Mode() != tui.ModeNormal {
+		t.Errorf("expected normal mode after confirm, got %d", app.Mode())
+	}
+
+	// Folder should be deleted
+	if len(app.Items()) != 0 {
+		t.Error("folder should be deleted after confirmation")
+	}
+
+	// Should have yanked the item
+	if app.YankedItem() == nil {
+		t.Error("deleted item should be in yank buffer")
+	}
+}
+
+func TestApp_DeleteFolder_CancelWithEsc(t *testing.T) {
+	store := &model.Store{
+		Folders: []model.Folder{
+			{ID: "f1", Name: "My Folder", ParentID: nil},
+		},
+		Bookmarks: []model.Bookmark{},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+
+	// Press dd to open confirmation
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	app = updated.(tui.App)
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	app = updated.(tui.App)
+
+	// Press Esc to cancel
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	app = updated.(tui.App)
+
+	// Should be back in normal mode
+	if app.Mode() != tui.ModeNormal {
+		t.Errorf("expected normal mode after cancel, got %d", app.Mode())
+	}
+
+	// Folder should NOT be deleted
+	if len(app.Items()) != 1 {
+		t.Error("folder should not be deleted after cancel")
+	}
+}
+
+func TestApp_DeleteBookmark_NoConfirmation(t *testing.T) {
+	store := &model.Store{
+		Folders: []model.Folder{},
+		Bookmarks: []model.Bookmark{
+			{ID: "b1", Title: "My Bookmark", URL: "https://test.com", FolderID: nil},
+		},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+
+	// Press dd on a bookmark
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	app = updated.(tui.App)
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	app = updated.(tui.App)
+
+	// Should delete immediately (no confirmation for bookmarks)
+	if app.Mode() != tui.ModeNormal {
+		t.Error("bookmarks should delete immediately without confirmation")
+	}
+
+	// Bookmark should be deleted
+	if len(app.Items()) != 0 {
+		t.Error("bookmark should be deleted immediately")
 	}
 }

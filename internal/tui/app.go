@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"strings"
+
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -14,6 +16,10 @@ const (
 	ModeNormal Mode = iota
 	ModeAddBookmark
 	ModeAddFolder
+	ModeEditFolder
+	ModeEditBookmark
+	ModeEditTags
+	ModeConfirmDelete
 )
 
 // App is the main bubbletea model for the bookmark manager.
@@ -44,6 +50,8 @@ type App struct {
 	mode       Mode
 	titleInput textinput.Model
 	urlInput   textinput.Model
+	tagsInput  textinput.Model
+	editItemID string // ID of item being edited (folder or bookmark)
 
 	// Window dimensions
 	width  int
@@ -80,6 +88,11 @@ func NewApp(params AppParams) App {
 	urlInput.CharLimit = 500
 	urlInput.Width = 40
 
+	tagsInput := textinput.New()
+	tagsInput.Placeholder = "tag1, tag2, tag3"
+	tagsInput.CharLimit = 200
+	tagsInput.Width = 40
+
 	app := App{
 		store:           params.Store,
 		keys:            keys,
@@ -90,6 +103,7 @@ func NewApp(params AppParams) App {
 		mode:            ModeNormal,
 		titleInput:      titleInput,
 		urlInput:        urlInput,
+		tagsInput:       tagsInput,
 		width:           80,
 		height:          24,
 	}
@@ -286,6 +300,48 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.titleInput.Reset()
 			a.titleInput.Focus()
 			return a, a.titleInput.Focus()
+
+		case key.Matches(msg, a.keys.Edit):
+			// Only edit if there's an item selected
+			if len(a.items) == 0 || a.cursor >= len(a.items) {
+				return a, nil
+			}
+			item := a.items[a.cursor]
+			if item.IsFolder() {
+				a.mode = ModeEditFolder
+				a.editItemID = item.Folder.ID
+				a.titleInput.Reset()
+				a.titleInput.SetValue(item.Folder.Name)
+				a.titleInput.Focus()
+				return a, a.titleInput.Focus()
+			} else {
+				a.mode = ModeEditBookmark
+				a.editItemID = item.Bookmark.ID
+				a.titleInput.Reset()
+				a.titleInput.SetValue(item.Bookmark.Title)
+				a.urlInput.Reset()
+				a.urlInput.SetValue(item.Bookmark.URL)
+				a.titleInput.Focus()
+				return a, a.titleInput.Focus()
+			}
+
+		case key.Matches(msg, a.keys.EditTags):
+			// Only edit tags on bookmarks
+			if len(a.items) == 0 || a.cursor >= len(a.items) {
+				return a, nil
+			}
+			item := a.items[a.cursor]
+			if item.IsFolder() {
+				// Folders don't have tags
+				return a, nil
+			}
+			a.mode = ModeEditTags
+			a.editItemID = item.Bookmark.ID
+			a.tagsInput.Reset()
+			// Convert tags slice to comma-separated string
+			a.tagsInput.SetValue(strings.Join(item.Bookmark.Tags, ", "))
+			a.tagsInput.Focus()
+			return a, a.tagsInput.Focus()
 		}
 	}
 
@@ -294,6 +350,22 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // updateModal handles key events when in a modal mode.
 func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Handle confirm delete modal separately (simple yes/no)
+	if a.mode == ModeConfirmDelete {
+		switch msg.Type {
+		case tea.KeyEsc:
+			// Cancel deletion
+			a.mode = ModeNormal
+			return a, nil
+		case tea.KeyEnter:
+			// Confirm deletion
+			a.confirmDeleteFolder()
+			a.mode = ModeNormal
+			return a, nil
+		}
+		return a, nil
+	}
+
 	switch msg.Type {
 	case tea.KeyEsc:
 		// Cancel modal
@@ -307,7 +379,7 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// Forward to text inputs
 	var cmd tea.Cmd
-	if a.mode == ModeAddBookmark {
+	if a.mode == ModeAddBookmark || a.mode == ModeEditBookmark {
 		// Handle Tab to switch between inputs
 		if msg.Type == tea.KeyTab {
 			if a.titleInput.Focused() {
@@ -326,8 +398,10 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else {
 			a.urlInput, cmd = a.urlInput.Update(msg)
 		}
-	} else if a.mode == ModeAddFolder {
+	} else if a.mode == ModeAddFolder || a.mode == ModeEditFolder {
 		a.titleInput, cmd = a.titleInput.Update(msg)
+	} else if a.mode == ModeEditTags {
+		a.tagsInput, cmd = a.tagsInput.Update(msg)
 	}
 
 	return a, cmd
@@ -372,6 +446,62 @@ func (a App) submitModal() (tea.Model, tea.Cmd) {
 		a.refreshItems()
 		a.mode = ModeNormal
 		return a, nil
+
+	case ModeEditFolder:
+		name := a.titleInput.Value()
+		if name == "" {
+			// Don't submit with empty name
+			return a, nil
+		}
+
+		// Find and update the folder
+		folder := a.store.GetFolderByID(a.editItemID)
+		if folder != nil {
+			folder.Name = name
+		}
+		a.refreshItems()
+		a.mode = ModeNormal
+		return a, nil
+
+	case ModeEditBookmark:
+		title := a.titleInput.Value()
+		url := a.urlInput.Value()
+		if title == "" || url == "" {
+			// Don't submit with empty fields
+			return a, nil
+		}
+
+		// Find and update the bookmark
+		bookmark := a.store.GetBookmarkByID(a.editItemID)
+		if bookmark != nil {
+			bookmark.Title = title
+			bookmark.URL = url
+		}
+		a.refreshItems()
+		a.mode = ModeNormal
+		return a, nil
+
+	case ModeEditTags:
+		// Parse comma-separated tags
+		tagsStr := a.tagsInput.Value()
+		var tags []string
+		if tagsStr != "" {
+			for _, tag := range strings.Split(tagsStr, ",") {
+				tag = strings.TrimSpace(tag)
+				if tag != "" {
+					tags = append(tags, tag)
+				}
+			}
+		}
+
+		// Find and update the bookmark
+		bookmark := a.store.GetBookmarkByID(a.editItemID)
+		if bookmark != nil {
+			bookmark.Tags = tags
+		}
+		a.refreshItems()
+		a.mode = ModeNormal
+		return a, nil
 	}
 
 	return a, nil
@@ -387,20 +517,45 @@ func (a *App) yankCurrentItem() {
 }
 
 // cutCurrentItem copies the current item to yank buffer and deletes it.
+// For folders, it shows a confirmation dialog instead of deleting immediately.
 func (a *App) cutCurrentItem() {
 	if len(a.items) == 0 || a.cursor >= len(a.items) {
 		return
 	}
 
 	item := a.items[a.cursor]
+
+	// For folders, show confirmation dialog
+	if item.IsFolder() {
+		a.editItemID = item.Folder.ID
+		a.mode = ModeConfirmDelete
+		return
+	}
+
+	// For bookmarks, delete immediately
+	a.yankedItem = &item
+	a.store.RemoveBookmarkByID(item.Bookmark.ID)
+
+	// Refresh items and adjust cursor
+	a.refreshItems()
+	if a.cursor >= len(a.items) && a.cursor > 0 {
+		a.cursor--
+	}
+}
+
+// confirmDeleteFolder performs the actual folder deletion after confirmation.
+func (a *App) confirmDeleteFolder() {
+	folder := a.store.GetFolderByID(a.editItemID)
+	if folder == nil {
+		return
+	}
+
+	// Store in yank buffer before deleting
+	item := Item{Kind: ItemFolder, Folder: folder}
 	a.yankedItem = &item
 
-	// Delete from store
-	if item.IsFolder() {
-		a.store.RemoveFolderByID(item.Folder.ID)
-	} else {
-		a.store.RemoveBookmarkByID(item.Bookmark.ID)
-	}
+	// Delete the folder
+	a.store.RemoveFolderByID(a.editItemID)
 
 	// Refresh items and adjust cursor
 	a.refreshItems()

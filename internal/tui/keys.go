@@ -16,6 +16,8 @@ type KeyMap struct {
 	PasteBefore key.Binding
 	AddBookmark key.Binding
 	AddFolder   key.Binding
+	Edit        key.Binding
+	EditTags    key.Binding
 	Quit        key.Binding
 }
 
@@ -69,6 +71,14 @@ func DefaultKeyMap() KeyMap {
 		AddFolder: key.NewBinding(
 			key.WithKeys("A"),
 			key.WithHelp("A", "add folder"),
+		),
+		Edit: key.NewBinding(
+			key.WithKeys("e"),
+			key.WithHelp("e", "edit"),
+		),
+		EditTags: key.NewBinding(
+			key.WithKeys("t"),
+			key.WithHelp("t", "edit tags"),
 		),
 		Quit: key.NewBinding(
 			key.WithKeys("q", "ctrl+c"),

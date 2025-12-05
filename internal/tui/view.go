@@ -73,6 +73,40 @@ func (a App) renderModal() string {
 		content.WriteString(a.urlInput.View())
 		content.WriteString("\n\n")
 		content.WriteString(a.styles.Help.Render("Tab: switch field • Enter: save • Esc: cancel"))
+
+	case ModeEditFolder:
+		title.WriteString("Edit Folder\n\n")
+		content.WriteString("Name:\n")
+		content.WriteString(a.titleInput.View())
+		content.WriteString("\n\n")
+		content.WriteString(a.styles.Help.Render("Enter: save • Esc: cancel"))
+
+	case ModeEditBookmark:
+		title.WriteString("Edit Bookmark\n\n")
+		content.WriteString("Title:\n")
+		content.WriteString(a.titleInput.View())
+		content.WriteString("\n\n")
+		content.WriteString("URL:\n")
+		content.WriteString(a.urlInput.View())
+		content.WriteString("\n\n")
+		content.WriteString(a.styles.Help.Render("Tab: switch field • Enter: save • Esc: cancel"))
+
+	case ModeEditTags:
+		title.WriteString("Edit Tags\n\n")
+		content.WriteString("Tags (comma-separated):\n")
+		content.WriteString(a.tagsInput.View())
+		content.WriteString("\n\n")
+		content.WriteString(a.styles.Help.Render("Enter: save • Esc: cancel"))
+
+	case ModeConfirmDelete:
+		folder := a.store.GetFolderByID(a.editItemID)
+		folderName := "this folder"
+		if folder != nil {
+			folderName = "\"" + folder.Name + "\""
+		}
+		title.WriteString("Delete Folder?\n\n")
+		content.WriteString("Are you sure you want to delete " + folderName + "?\n\n")
+		content.WriteString(a.styles.Help.Render("Enter: confirm • Esc: cancel"))
 	}
 
 	modalContent := a.styles.Title.Render(title.String()) + content.String()
@@ -222,7 +256,7 @@ func (a App) renderItem(item Item, selected bool, maxWidth int) string {
 }
 
 func (a App) renderHelpBar() string {
-	help := "j/k: move  h/l: navigate  a: add bookmark  A: add folder  yy: yank  dd: cut  p: paste  q: quit"
+	help := "j/k: move  h/l: navigate  a: add  A: folder  e: edit  t: tags  yy: yank  dd: cut  p: paste  q: quit"
 	return a.styles.Help.Render(help)
 }
 
