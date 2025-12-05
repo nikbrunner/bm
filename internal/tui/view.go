@@ -443,7 +443,7 @@ func (a App) renderHelpBar() string {
 		status.WriteString("  " + statusStyle.Render(a.statusMessage))
 	}
 
-	help := "j/k: move  h/l: navigate  /: find  s: sort  a: add  e: edit  y: yank  d: del  x: cut  p: paste  ?: help  q: quit"
+	help := "j/k: move  l/Enter: open  /: find  s: sort  a: add  e: edit  y: yank  d: del  x: cut  p: paste  ?: help  q: quit"
 
 	return a.styles.Help.Render(status.String() + "  " + help)
 }
@@ -470,7 +470,7 @@ func (a App) renderHelpOverlay() string {
 	content.WriteString(a.styles.Tag.Render("Navigation"))
 	content.WriteString("\n")
 	content.WriteString("  j/k       Move down/up\n")
-	content.WriteString("  h/l       Navigate out/into folder\n")
+	content.WriteString("  h/l       Navigate back/forward (l opens bookmarks)\n")
 	content.WriteString("  gg        Jump to top\n")
 	content.WriteString("  G         Jump to bottom\n")
 	content.WriteString("\n")

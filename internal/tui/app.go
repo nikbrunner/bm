@@ -406,7 +406,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case key.Matches(msg, a.keys.Right):
-			// Enter folder if current item is a folder
+			// Enter folder or open bookmark
 			if len(a.items) > 0 && a.cursor < len(a.items) {
 				item := a.items[a.cursor]
 				if item.IsFolder() {
@@ -419,6 +419,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					a.currentFolderID = &id
 					a.cursor = 0
 					a.refreshItems()
+				} else {
+					// Open bookmark URL
+					return a.openBookmark()
 				}
 			}
 
