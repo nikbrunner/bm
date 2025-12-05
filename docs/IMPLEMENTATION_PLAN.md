@@ -6,7 +6,7 @@
 - **Phase 3**: CRUD Operations (add, edit, delete, yank, paste) ✅
 - **Phase 4**: Search & Sort ✅
 - **Phase 5**: Actions & Polish ✅
-- **Phase 6**: CLI & Export
+- **Phase 6**: CLI & Export ✅
 - **Phase 7**: Final Polish
 - **Approach**: TDD - tests first, then implementation
 
@@ -18,6 +18,9 @@
 /Users/nbr/repos/nikbrunner/bm/
 ├── cmd/bm/main.go                    # Entry point + CLI commands
 ├── internal/
+│   ├── exporter/
+│   │   ├── html.go                   # Netscape HTML bookmark exporter
+│   │   └── html_test.go              # Exporter tests
 │   ├── importer/
 │   │   ├── html.go                   # Netscape HTML bookmark parser
 │   │   └── html_test.go              # Parser tests
@@ -27,6 +30,12 @@
 │   │   ├── store.go                  # Store (data + queries + import)
 │   │   ├── uuid.go                   # UUID generation
 │   │   └── model_test.go             # Model tests
+│   ├── picker/
+│   │   ├── picker.go                 # TUI picker for search results
+│   │   └── picker_test.go            # Picker tests
+│   ├── search/
+│   │   ├── search.go                 # Fuzzy search functionality
+│   │   └── search_test.go            # Search tests
 │   ├── storage/
 │   │   ├── storage.go                # Storage interface + JSON impl
 │   │   └── storage_test.go           # Storage tests
@@ -123,6 +132,19 @@
 | 39 | CLI import subcommand | `bm import <file>` | :white_check_mark: |
 
 **Tests:** 75 passing (TDD approach)
+
+### Phase 6: CLI & Export (COMPLETE)
+
+| # | Task | CLI | Status |
+|---|------|-----|--------|
+| 40 | Quick fuzzy open | `bm <query>` | :white_check_mark: |
+| 41 | Search package for reusable fuzzy search | - | :white_check_mark: |
+| 42 | Picker TUI for multiple results | - | :white_check_mark: |
+| 43 | HTML export (Netscape format) | `bm export [file]` | :white_check_mark: |
+| 44 | Default export path (~/Downloads/...) | - | :white_check_mark: |
+| 45 | Status messages for user feedback | - | :white_check_mark: |
+
+**Tests:** 103 passing (TDD approach)
 
 ---
 

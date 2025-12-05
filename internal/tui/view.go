@@ -441,6 +441,12 @@ func (a App) renderHelpBar() string {
 	}
 	status.WriteString("[sort: " + sortLabels[a.sortMode] + "]")
 
+	// Status message (if any)
+	if a.statusMessage != "" {
+		statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Bold(true)
+		status.WriteString("  " + statusStyle.Render(a.statusMessage))
+	}
+
 	help := "j/k: move  h/l: navigate  /: find  s: sort  a: add  e: edit  dd: cut  p: paste  ?: help  q: quit"
 
 	return a.styles.Help.Render(status.String() + "  " + help)

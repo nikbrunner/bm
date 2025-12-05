@@ -99,6 +99,9 @@ type App struct {
 	tagsInput  textinput.Model
 	editItemID string // ID of item being edited (folder or bookmark)
 
+	// Status message (for user feedback)
+	statusMessage string
+
 	// Window dimensions
 	width  int
 	height int
@@ -310,6 +313,16 @@ func (a App) FilterQuery() string {
 	return a.filterQuery
 }
 
+// StatusMessage returns the current status message.
+func (a App) StatusMessage() string {
+	return a.statusMessage
+}
+
+// setStatus sets the status message.
+func (a *App) setStatus(msg string) {
+	a.statusMessage = msg
+}
+
 // FuzzyMatches returns the current fuzzy match results.
 func (a App) FuzzyMatches() []fuzzyMatch {
 	return a.fuzzyMatches
@@ -397,11 +410,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(a.items) > 0 && a.cursor < len(a.items)-1 {
 				a.cursor++
 			}
+			a.statusMessage = "" // Clear status on navigation
 
 		case key.Matches(msg, a.keys.Up):
 			if a.cursor > 0 {
 				a.cursor--
 			}
+			a.statusMessage = "" // Clear status on navigation
 
 		case key.Matches(msg, a.keys.Bottom):
 			if len(a.items) > 0 {
@@ -733,6 +748,7 @@ func (a App) submitModal() (tea.Model, tea.Cmd) {
 		a.store.AddFolder(newFolder)
 		a.refreshItems()
 		a.mode = ModeNormal
+		a.setStatus("Folder added: " + name)
 		return a, nil
 
 	case ModeAddBookmark:
@@ -753,6 +769,7 @@ func (a App) submitModal() (tea.Model, tea.Cmd) {
 		a.store.AddBookmark(newBookmark)
 		a.refreshItems()
 		a.mode = ModeNormal
+		a.setStatus("Bookmark added: " + title)
 		return a, nil
 
 	case ModeEditFolder:
@@ -822,6 +839,7 @@ func (a *App) yankCurrentItem() {
 	}
 	item := a.items[a.cursor]
 	a.yankedItem = &item
+	a.setStatus("Yanked: " + item.Title())
 }
 
 // cutCurrentItem copies the current item to yank buffer and deletes it.
@@ -841,6 +859,7 @@ func (a *App) cutCurrentItem() {
 	}
 
 	// For bookmarks, delete immediately
+	title := item.Bookmark.Title
 	a.yankedItem = &item
 	a.store.RemoveBookmarkByID(item.Bookmark.ID)
 
@@ -849,6 +868,7 @@ func (a *App) cutCurrentItem() {
 	if a.cursor >= len(a.items) && a.cursor > 0 {
 		a.cursor--
 	}
+	a.setStatus("Deleted: " + title)
 }
 
 // confirmDeleteFolder performs the actual folder deletion after confirmation.
@@ -875,6 +895,7 @@ func (a *App) confirmDeleteFolder() {
 // pasteItem pastes the yanked item before or after the cursor.
 func (a *App) pasteItem(before bool) {
 	if a.yankedItem == nil {
+		a.setStatus("Nothing to paste")
 		return
 	}
 
@@ -883,6 +904,8 @@ func (a *App) pasteItem(before bool) {
 	if !before && len(a.items) > 0 {
 		insertIdx = a.cursor + 1
 	}
+
+	title := a.yankedItem.Title()
 
 	if a.yankedItem.IsFolder() {
 		// Create a copy with new ID
@@ -932,6 +955,7 @@ func (a *App) pasteItem(before bool) {
 	}
 
 	a.refreshItems()
+	a.setStatus("Pasted: " + title)
 }
 
 // openBookmark opens the selected bookmark URL in default browser.
@@ -986,6 +1010,7 @@ func (a App) yankURLToClipboard() (tea.Model, tea.Cmd) {
 	}
 
 	url := item.Bookmark.URL
+	a.setStatus("URL copied to clipboard")
 	cmd := func() tea.Msg {
 		_ = clipboard.WriteAll(url)
 		return nil

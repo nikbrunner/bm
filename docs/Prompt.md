@@ -226,13 +226,12 @@ Export bookmarks to standard Netscape bookmark HTML format (compatible with all 
 - [x] `?` - Help overlay
 - [x] `q`/`Esc` - Quit handling
 - [x] Empty state UI
-- [ ] Error handling & user feedback
+- [x] Error handling & user feedback (status messages)
 
-### Phase 6: CLI & Export
+### Phase 6: CLI & Export ✅
 - [x] `bm import <file.html>` - Import from browser HTML export
-- [ ] `bm <query>` - Quick fuzzy open mode
-- [ ] `E` - HTML export
-- [ ] Export filename with date
+- [x] `bm <query>` - Quick fuzzy open mode
+- [x] `bm export [file]` - HTML export (default: ~/Downloads/bookmarks-export-YYYY-MM-DD.html)
 
 ### Phase 7: Final Polish
 - [ ] Edge case testing

@@ -1770,3 +1770,166 @@ func TestApp_HelpOverlay_CloseWithQ(t *testing.T) {
 		t.Error("'q' in help mode should close help, not quit")
 	}
 }
+
+// === Status Message Tests ===
+
+func TestApp_StatusMessage_AfterAddBookmark(t *testing.T) {
+	store := &model.Store{
+		Folders:   []model.Folder{},
+		Bookmarks: []model.Bookmark{},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+
+	// Open add bookmark modal
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	app = updated.(tui.App)
+
+	// Type title
+	for _, r := range "Test Bookmark" {
+		updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		app = updated.(tui.App)
+	}
+
+	// Tab to URL field
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyTab})
+	app = updated.(tui.App)
+
+	// Type URL
+	for _, r := range "https://test.com" {
+		updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		app = updated.(tui.App)
+	}
+
+	// Submit
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	app = updated.(tui.App)
+
+	// Should have status message
+	msg := app.StatusMessage()
+	if msg == "" {
+		t.Error("expected status message after adding bookmark")
+	}
+	if !containsStr(msg, "added") && !containsStr(msg, "Added") {
+		t.Errorf("expected 'added' in status message, got: %q", msg)
+	}
+}
+
+func TestApp_StatusMessage_AfterYankURL(t *testing.T) {
+	store := &model.Store{
+		Folders: []model.Folder{},
+		Bookmarks: []model.Bookmark{
+			{ID: "b1", Title: "Test", URL: "https://example.com", FolderID: nil},
+		},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+
+	// Press 'Y' to yank URL
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'Y'}})
+	app = updated.(tui.App)
+
+	// Should have status message
+	msg := app.StatusMessage()
+	if msg == "" {
+		t.Error("expected status message after yanking URL")
+	}
+	if !containsStr(msg, "copied") && !containsStr(msg, "Copied") && !containsStr(msg, "clipboard") {
+		t.Errorf("expected 'copied' or 'clipboard' in status message, got: %q", msg)
+	}
+}
+
+func TestApp_StatusMessage_AfterDelete(t *testing.T) {
+	store := &model.Store{
+		Folders: []model.Folder{},
+		Bookmarks: []model.Bookmark{
+			{ID: "b1", Title: "Test", URL: "https://example.com", FolderID: nil},
+		},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+
+	// Press dd to delete
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	app = updated.(tui.App)
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	app = updated.(tui.App)
+
+	// Should have status message
+	msg := app.StatusMessage()
+	if msg == "" {
+		t.Error("expected status message after delete")
+	}
+	if !containsStr(msg, "deleted") && !containsStr(msg, "Deleted") && !containsStr(msg, "cut") && !containsStr(msg, "Cut") {
+		t.Errorf("expected 'deleted' or 'cut' in status message, got: %q", msg)
+	}
+}
+
+func TestApp_StatusMessage_AfterYank(t *testing.T) {
+	store := &model.Store{
+		Folders: []model.Folder{},
+		Bookmarks: []model.Bookmark{
+			{ID: "b1", Title: "Test", URL: "https://example.com", FolderID: nil},
+		},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+
+	// Press yy to yank
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	app = updated.(tui.App)
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	app = updated.(tui.App)
+
+	// Should have status message
+	msg := app.StatusMessage()
+	if msg == "" {
+		t.Error("expected status message after yank")
+	}
+	if !containsStr(msg, "yanked") && !containsStr(msg, "Yanked") && !containsStr(msg, "copied") && !containsStr(msg, "Copied") {
+		t.Errorf("expected 'yanked' or 'copied' in status message, got: %q", msg)
+	}
+}
+
+func TestApp_StatusMessage_AfterPaste(t *testing.T) {
+	store := &model.Store{
+		Folders: []model.Folder{},
+		Bookmarks: []model.Bookmark{
+			{ID: "b1", Title: "Test", URL: "https://example.com", FolderID: nil},
+		},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+
+	// Yank first
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	app = updated.(tui.App)
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	app = updated.(tui.App)
+
+	// Paste
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	app = updated.(tui.App)
+
+	// Should have status message
+	msg := app.StatusMessage()
+	if msg == "" {
+		t.Error("expected status message after paste")
+	}
+	if !containsStr(msg, "pasted") && !containsStr(msg, "Pasted") {
+		t.Errorf("expected 'pasted' in status message, got: %q", msg)
+	}
+}
+
+func containsStr(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsStrHelper(s, substr))
+}
+
+func containsStrHelper(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
