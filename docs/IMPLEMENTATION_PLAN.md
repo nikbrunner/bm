@@ -5,7 +5,7 @@
 - **Phase 2**: Core TUI (Miller columns, vim navigation) ✅
 - **Phase 3**: CRUD Operations (add, edit, delete, yank, paste) ✅
 - **Phase 4**: Search & Sort ✅
-- **Phase 5**: Actions & Polish
+- **Phase 5**: Actions & Polish ✅
 - **Phase 6**: CLI & Export
 - **Phase 7**: Final Polish
 - **Approach**: TDD - tests first, then implementation
@@ -16,12 +16,15 @@
 
 ```
 /Users/nbr/repos/nikbrunner/bm/
-├── cmd/bm/main.go                    # Entry point
+├── cmd/bm/main.go                    # Entry point + CLI commands
 ├── internal/
+│   ├── importer/
+│   │   ├── html.go                   # Netscape HTML bookmark parser
+│   │   └── html_test.go              # Parser tests
 │   ├── model/
 │   │   ├── bookmark.go               # Bookmark struct
 │   │   ├── folder.go                 # Folder struct
-│   │   ├── store.go                  # Store (data container + queries)
+│   │   ├── store.go                  # Store (data + queries + import)
 │   │   ├── uuid.go                   # UUID generation
 │   │   └── model_test.go             # Model tests
 │   ├── storage/
@@ -29,11 +32,13 @@
 │   │   └── storage_test.go           # Storage tests
 │   └── tui/
 │       ├── app.go                    # Main bubbletea Model
-│       ├── app_test.go               # Navigation tests
+│       ├── app_test.go               # TUI tests
 │       ├── keys.go                   # Key bindings
 │       ├── styles.go                 # lipgloss styles
 │       ├── item.go                   # Item type (folder/bookmark union)
 │       └── view.go                   # View rendering
+├── testdata/
+│   └── bookmarks.html                # Test fixture for import
 ├── go.mod
 └── go.sum
 ```
@@ -96,6 +101,28 @@
 | 31 | Sort indicator in UI | auto | :white_check_mark: |
 
 **Tests:** 49 passing (TDD approach)
+
+### Phase 5: Actions & Polish (COMPLETE)
+
+| # | Task | Key | Status |
+|---|------|-----|--------|
+| 32 | Open URL in default browser | `o` | :white_check_mark: |
+| 33 | Update visitedAt on open | auto | :white_check_mark: |
+| 34 | Yank URL to system clipboard | `Y` | :white_check_mark: |
+| 35 | Help overlay toggle | `?` | :white_check_mark: |
+| 36 | Help overlay view | auto | :white_check_mark: |
+
+**Tests:** 59 passing (TDD approach)
+
+### Phase 5.5: HTML Import (COMPLETE)
+
+| # | Task | CLI | Status |
+|---|------|-----|--------|
+| 37 | HTML parser (Netscape format) | - | :white_check_mark: |
+| 38 | Store.ImportMerge with duplicate detection | - | :white_check_mark: |
+| 39 | CLI import subcommand | `bm import <file>` | :white_check_mark: |
+
+**Tests:** 75 passing (TDD approach)
 
 ---
 

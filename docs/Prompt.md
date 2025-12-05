@@ -120,8 +120,9 @@ Location: `~/.config/bm/bookmarks.json`
 ## CLI Interface
 
 ```bash
-bm              # Opens full TUI
-bm <query>      # Fuzzy search → select → opens in browser (no TUI)
+bm                        # Opens full TUI
+bm import <file.html>     # Import bookmarks from browser HTML export
+bm <query>                # Fuzzy search → select → opens in browser (no TUI)
 ```
 
 ---
@@ -218,16 +219,17 @@ Export bookmarks to standard Netscape bookmark HTML format (compatible with all 
 - [x] Fuzzy matching with sahilm/fuzzy library
 - [x] Results + preview pane layout
 
-### Phase 5: Actions & Polish
-- [ ] `o`/`Enter` - Open URL in default browser
-- [ ] `Y` - Yank URL to system clipboard
-- [ ] Update `visitedAt` on open
-- [ ] `?` - Help overlay
+### Phase 5: Actions & Polish ✅
+- [x] `o`/`Enter` - Open URL in default browser
+- [x] `Y` - Yank URL to system clipboard
+- [x] Update `visitedAt` on open
+- [x] `?` - Help overlay
 - [x] `q`/`Esc` - Quit handling
 - [x] Empty state UI
 - [ ] Error handling & user feedback
 
 ### Phase 6: CLI & Export
+- [x] `bm import <file.html>` - Import from browser HTML export
 - [ ] `bm <query>` - Quick fuzzy open mode
 - [ ] `E` - HTML export
 - [ ] Export filename with date
