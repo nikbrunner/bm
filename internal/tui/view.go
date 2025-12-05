@@ -131,6 +131,12 @@ func (a App) renderModal() string {
 func (a App) renderParentPane(width, height int) string {
 	var content strings.Builder
 
+	// Account for border (2 lines) when calculating visible items
+	visibleHeight := height - 2
+	if visibleHeight < 1 {
+		visibleHeight = 1
+	}
+
 	if a.currentFolderID == nil {
 		// At root - show app title
 		content.WriteString(a.styles.Title.Render("bm"))
@@ -144,7 +150,27 @@ func (a App) renderParentPane(width, height int) string {
 			parentFolderID := currentFolder.ParentID
 			items := a.getItemsForFolder(parentFolderID)
 
-			for _, item := range items {
+			// Find index of current folder for viewport calculation
+			currentIdx := 0
+			for i, item := range items {
+				if item.IsFolder() && item.Folder.ID == *a.currentFolderID {
+					currentIdx = i
+					break
+				}
+			}
+
+			// Calculate viewport offset to keep current folder visible
+			offset := calculateViewportOffset(currentIdx, len(items), visibleHeight)
+
+			for i, item := range items {
+				// Skip items before viewport
+				if i < offset {
+					continue
+				}
+				// Stop after viewport is filled
+				if i >= offset+visibleHeight {
+					break
+				}
 				// Highlight current folder in parent view
 				isCurrentFolder := item.IsFolder() && item.Folder.ID == *a.currentFolderID
 				line := a.renderItem(item, isCurrentFolder, width-4)
@@ -162,10 +188,27 @@ func (a App) renderParentPane(width, height int) string {
 func (a App) renderCurrentPane(width, height int) string {
 	var content strings.Builder
 
+	// Account for border (2 lines) when calculating visible items
+	visibleHeight := height - 2
+	if visibleHeight < 1 {
+		visibleHeight = 1
+	}
+
 	if len(a.items) == 0 {
 		content.WriteString(a.styles.Empty.Render("(empty)"))
 	} else {
+		// Calculate viewport offset to keep cursor visible
+		offset := calculateViewportOffset(a.cursor, len(a.items), visibleHeight)
+
 		for i, item := range a.items {
+			// Skip items before viewport
+			if i < offset {
+				continue
+			}
+			// Stop after viewport is filled
+			if i >= offset+visibleHeight {
+				break
+			}
 			isSelected := i == a.cursor
 			line := a.renderItem(item, isSelected, width-4)
 			content.WriteString(line + "\n")
@@ -181,6 +224,12 @@ func (a App) renderCurrentPane(width, height int) string {
 func (a App) renderPreviewPane(width, height int) string {
 	var content strings.Builder
 
+	// Account for border (2 lines) when calculating visible items
+	visibleHeight := height - 2
+	if visibleHeight < 1 {
+		visibleHeight = 1
+	}
+
 	if len(a.items) > 0 && a.cursor < len(a.items) {
 		item := a.items[a.cursor]
 
@@ -192,7 +241,11 @@ func (a App) renderPreviewPane(width, height int) string {
 			if len(children) == 0 {
 				content.WriteString(a.styles.Empty.Render("(empty folder)"))
 			} else {
-				for _, child := range children {
+				// Limit to visible height
+				for i, child := range children {
+					if i >= visibleHeight {
+						break
+					}
 					content.WriteString(a.renderItem(child, false, width-4) + "\n")
 				}
 			}
@@ -562,4 +615,25 @@ func (a App) getBreadcrumb() string {
 // Store returns the underlying store (for access from view).
 func (a App) Store() *model.Store {
 	return a.store
+}
+
+// calculateViewportOffset calculates the scroll offset needed to keep the
+// selected item visible within the viewport.
+func calculateViewportOffset(selected, total, viewportHeight int) int {
+	if total <= viewportHeight {
+		return 0
+	}
+
+	// Keep selection roughly centered, but clamp to valid range
+	offset := selected - viewportHeight/2
+	if offset < 0 {
+		offset = 0
+	}
+
+	maxOffset := total - viewportHeight
+	if offset > maxOffset {
+		offset = maxOffset
+	}
+
+	return offset
 }
