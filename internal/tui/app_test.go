@@ -1214,32 +1214,32 @@ func TestApp_SortMode_Cycle(t *testing.T) {
 		t.Fatal("expected to start at SortManual")
 	}
 
-	// Press 's' to cycle to alpha
-	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	// Press 'o' to cycle to alpha
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
 	app = updated.(tui.App)
 	if app.SortMode() != tui.SortAlpha {
-		t.Errorf("expected SortAlpha after first 's', got %d", app.SortMode())
+		t.Errorf("expected SortAlpha after first 'o', got %d", app.SortMode())
 	}
 
-	// Press 's' to cycle to date created
-	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	// Press 'o' to cycle to date created
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
 	app = updated.(tui.App)
 	if app.SortMode() != tui.SortCreated {
-		t.Errorf("expected SortCreated after second 's', got %d", app.SortMode())
+		t.Errorf("expected SortCreated after second 'o', got %d", app.SortMode())
 	}
 
-	// Press 's' to cycle to date visited
-	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	// Press 'o' to cycle to date visited
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
 	app = updated.(tui.App)
 	if app.SortMode() != tui.SortVisited {
-		t.Errorf("expected SortVisited after third 's', got %d", app.SortMode())
+		t.Errorf("expected SortVisited after third 'o', got %d", app.SortMode())
 	}
 
-	// Press 's' to cycle back to manual
-	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	// Press 'o' to cycle back to manual
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
 	app = updated.(tui.App)
 	if app.SortMode() != tui.SortManual {
-		t.Errorf("expected SortManual after fourth 's', got %d", app.SortMode())
+		t.Errorf("expected SortManual after fourth 'o', got %d", app.SortMode())
 	}
 }
 
@@ -1259,7 +1259,7 @@ func TestApp_SortMode_Alpha_SortsFoldersAndBookmarks(t *testing.T) {
 	app := tui.NewApp(tui.AppParams{Store: store})
 
 	// Cycle to alpha sort
-	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
 	app = updated.(tui.App)
 
 	items := app.Items()
@@ -1300,9 +1300,9 @@ func TestApp_SortMode_DateCreated(t *testing.T) {
 	app := tui.NewApp(tui.AppParams{Store: store})
 
 	// Cycle to date created sort (manual -> alpha -> created)
-	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
 	app = updated.(tui.App)
-	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
 	app = updated.(tui.App)
 
 	items := app.Items()
@@ -1342,7 +1342,7 @@ func TestApp_SortMode_DateVisited(t *testing.T) {
 
 	// Cycle to date visited sort (manual -> alpha -> created -> visited)
 	for i := 0; i < 3; i++ {
-		updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+		updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
 		app = updated.(tui.App)
 	}
 
@@ -1375,7 +1375,7 @@ func TestApp_FuzzyFinder_Open(t *testing.T) {
 	app := tui.NewApp(tui.AppParams{Store: store})
 
 	// Press '/' to open fuzzy finder
-	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
 	app = updated.(tui.App)
 
 	// Should be in search mode
@@ -1407,7 +1407,7 @@ func TestApp_FuzzyFinder_Cancel(t *testing.T) {
 	originalCursor := app.Cursor()
 
 	// Open fuzzy finder
-	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
 	app = updated.(tui.App)
 
 	// Press Esc to cancel
@@ -1446,7 +1446,7 @@ func TestApp_FuzzyFinder_Filters(t *testing.T) {
 	app := tui.NewApp(tui.AppParams{Store: store})
 
 	// Open fuzzy finder and type "Dev"
-	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
 	app = updated.(tui.App)
 
 	for _, r := range "Dev" {
@@ -1488,7 +1488,7 @@ func TestApp_FuzzyFinder_Navigate(t *testing.T) {
 	app := tui.NewApp(tui.AppParams{Store: store})
 
 	// Open fuzzy finder
-	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
 	app = updated.(tui.App)
 
 	// Should start at 0
@@ -1524,7 +1524,7 @@ func TestApp_FuzzyFinder_SelectFolder(t *testing.T) {
 	app := tui.NewApp(tui.AppParams{Store: store})
 
 	// Open fuzzy finder
-	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
 	app = updated.(tui.App)
 
 	// Navigate to second item (Beta)
@@ -1571,7 +1571,7 @@ func TestApp_FuzzyFinder_SelectBookmark(t *testing.T) {
 	}
 
 	// Open fuzzy finder and search for "TanStack"
-	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
 	app = updated.(tui.App)
 
 	for _, r := range "TanStack" {
@@ -1623,8 +1623,8 @@ func TestApp_OpenBookmark_UpdatesVisitedAt(t *testing.T) {
 		t.Error("visitedAt should be nil initially")
 	}
 
-	// Press 'o' to open bookmark
-	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	// Press 'l' to open bookmark (Right key opens bookmarks)
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
 	app = updated.(tui.App)
 
 	// visitedAt should now be set
@@ -1638,7 +1638,7 @@ func TestApp_OpenBookmark_UpdatesVisitedAt(t *testing.T) {
 	}
 }
 
-func TestApp_OpenBookmark_OnFolder_DoesNothing(t *testing.T) {
+func TestApp_OpenBookmark_OnFolder_EntersFolder(t *testing.T) {
 	store := &model.Store{
 		Folders: []model.Folder{
 			{ID: "f1", Name: "Test Folder", ParentID: nil},
@@ -1648,13 +1648,13 @@ func TestApp_OpenBookmark_OnFolder_DoesNothing(t *testing.T) {
 
 	app := tui.NewApp(tui.AppParams{Store: store})
 
-	// Press 'o' on a folder - should do nothing (no crash)
-	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	// Press 'l' on a folder - should enter folder
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
 	app = updated.(tui.App)
 
-	// Should still be in normal mode
-	if app.Mode() != tui.ModeNormal {
-		t.Error("pressing 'o' on folder should stay in normal mode")
+	// Should now be inside the folder
+	if app.CurrentFolderID() == nil || *app.CurrentFolderID() != "f1" {
+		t.Error("pressing 'l' on folder should enter folder")
 	}
 }
 
@@ -1666,13 +1666,13 @@ func TestApp_OpenBookmark_EmptyList(t *testing.T) {
 
 	app := tui.NewApp(tui.AppParams{Store: store})
 
-	// Press 'o' on empty list - should do nothing (no crash)
-	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	// Press 'l' on empty list - should do nothing (no crash)
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
 	app = updated.(tui.App)
 
 	// Should still be in normal mode
 	if app.Mode() != tui.ModeNormal {
-		t.Error("pressing 'o' on empty list should stay in normal mode")
+		t.Error("pressing 'l' on empty list should stay in normal mode")
 	}
 }
 

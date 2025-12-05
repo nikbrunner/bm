@@ -23,7 +23,7 @@ type KeyMap struct {
 	Sort          key.Binding
 	ToggleConfirm key.Binding
 	Search        key.Binding
-	Open          key.Binding
+	Filter        key.Binding
 	YankURL       key.Binding
 	Pin           key.Binding
 	Help          key.Binding
@@ -98,20 +98,20 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("t", "edit tags"),
 		),
 		Sort: key.NewBinding(
-			key.WithKeys("s"),
-			key.WithHelp("s", "cycle sort"),
+			key.WithKeys("o"),
+			key.WithHelp("o", "cycle sort"),
 		),
 		ToggleConfirm: key.NewBinding(
 			key.WithKeys("c"),
 			key.WithHelp("c", "toggle confirm"),
 		),
 		Search: key.NewBinding(
+			key.WithKeys("s"),
+			key.WithHelp("s", "global search"),
+		),
+		Filter: key.NewBinding(
 			key.WithKeys("/"),
 			key.WithHelp("/", "filter"),
-		),
-		Open: key.NewBinding(
-			key.WithKeys("o"),
-			key.WithHelp("o", "open URL"),
 		),
 		YankURL: key.NewBinding(
 			key.WithKeys("Y"),

@@ -345,13 +345,30 @@ func (a App) renderCurrentPane(width, height int) string {
 		visibleHeight = 1
 	}
 
-	if len(a.items) == 0 {
-		content.WriteString(a.styles.Empty.Render("(empty)"))
+	// Show filter input or indicator at top
+	if a.mode == ModeFilter {
+		content.WriteString("/" + a.filterInput.View() + "\n")
+		visibleHeight--
+	} else if a.filterQuery != "" {
+		filterIndicator := a.styles.Tag.Render("/" + a.filterQuery)
+		content.WriteString(filterIndicator + "\n")
+		visibleHeight--
+	}
+
+	// Get display items (filtered or all)
+	displayItems := a.getDisplayItems()
+
+	if len(displayItems) == 0 {
+		if a.filterQuery != "" {
+			content.WriteString(a.styles.Empty.Render("(no matches)"))
+		} else {
+			content.WriteString(a.styles.Empty.Render("(empty)"))
+		}
 	} else {
 		// Calculate viewport offset to keep cursor visible
-		offset := calculateViewportOffset(a.cursor, len(a.items), visibleHeight)
+		offset := calculateViewportOffset(a.cursor, len(displayItems), visibleHeight)
 
-		for i, item := range a.items {
+		for i, item := range displayItems {
 			// Skip items before viewport
 			if i < offset {
 				continue
@@ -388,8 +405,9 @@ func (a App) renderPreviewPane(width, height int) string {
 		visibleHeight = 1
 	}
 
-	if len(a.items) > 0 && a.cursor < len(a.items) {
-		item := a.items[a.cursor]
+	displayItems := a.getDisplayItems()
+	if len(displayItems) > 0 && a.cursor < len(displayItems) {
+		item := displayItems[a.cursor]
 
 		if item.IsFolder() {
 			// Show folder contents preview
@@ -674,7 +692,7 @@ func (a App) renderHelpBar() string {
 	}
 
 	// Hints line
-	hints := "j/k: move  h/l: nav  o: open  m: pin  /: find  a: add  i: AI add  e: edit  d: del  ?: help  q: quit"
+	hints := "j/k: move  h/l: nav  m: pin  s: search  /: filter  o: sort  a: add  i: AI add  d: del  ?: help  q: quit"
 
 	// Style without padding for individual lines
 	lineStyle := lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#666666", Dark: "#888888"})
@@ -792,11 +810,12 @@ func (a App) renderHelpOverlay() string {
 	// Actions
 	content.WriteString(a.styles.Tag.Render("Actions"))
 	content.WriteString("\n")
-	content.WriteString("  o/Enter   Open URL in browser\n")
+	content.WriteString("  Enter/l   Open URL in browser\n")
 	content.WriteString("  Y         Yank URL to clipboard\n")
 	content.WriteString("  m         Pin/unpin item\n")
-	content.WriteString("  /         Global search\n")
-	content.WriteString("  s         Cycle sort mode\n")
+	content.WriteString("  s         Global search\n")
+	content.WriteString("  /         Filter current folder\n")
+	content.WriteString("  o         Cycle sort mode\n")
 	content.WriteString("  c         Toggle delete confirmations\n")
 	content.WriteString("\n")
 

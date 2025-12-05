@@ -34,6 +34,7 @@ const (
 	ModeEditTags
 	ModeConfirmDelete
 	ModeSearch
+	ModeFilter // Local filter for current folder
 	ModeHelp
 	ModeQuickAdd        // URL input for AI quick add
 	ModeQuickAddLoading // Waiting for AI response
@@ -96,12 +97,16 @@ type App struct {
 	// Sort mode
 	sortMode SortMode
 
-	// Filter/search
-	filterQuery  string
+	// Global search (s key)
 	searchInput  textinput.Model
 	fuzzyMatches []fuzzyMatch // Current fuzzy match results
 	fuzzyCursor  int          // Selected index in fuzzy results
-	allItems     []Item       // All items in current folder (unfiltered)
+	allItems     []Item       // All items for global search
+
+	// Local filter (/ key)
+	filterInput   textinput.Model
+	filterQuery   string // Active filter query (persists after closing filter)
+	filteredItems []Item // Items matching filter in current folder
 
 	// For gg command
 	lastKeyWasG bool
@@ -171,9 +176,14 @@ func NewApp(params AppParams) App {
 	tagsInput.Width = 40
 
 	searchInput := textinput.New()
-	searchInput.Placeholder = "Filter..."
+	searchInput.Placeholder = "Search all..."
 	searchInput.CharLimit = 100
 	searchInput.Width = 40
+
+	filterInput := textinput.New()
+	filterInput.Placeholder = "Filter..."
+	filterInput.CharLimit = 50
+	filterInput.Width = 30
 
 	quickAddInput := textinput.New()
 	quickAddInput.Placeholder = "https://..."
@@ -194,6 +204,7 @@ func NewApp(params AppParams) App {
 		urlInput:        urlInput,
 		tagsInput:       tagsInput,
 		searchInput:     searchInput,
+		filterInput:     filterInput,
 		quickAddInput:   quickAddInput,
 		confirmDelete:   true,
 		width:           80,
@@ -214,6 +225,9 @@ func NewApp(params AppParams) App {
 // refreshItems rebuilds the items slice based on current folder and sort mode.
 func (a *App) refreshItems() {
 	a.items = []Item{}
+	// Clear filter when refreshing (folder changed)
+	a.filterQuery = ""
+	a.filteredItems = nil
 
 	// Get folders and bookmarks
 	folders := a.store.GetFoldersInFolder(a.currentFolderID)
@@ -532,7 +546,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, tea.Quit
 
 		case key.Matches(msg, a.keys.Down):
-			if len(a.items) > 0 && a.cursor < len(a.items)-1 {
+			displayItems := a.getDisplayItems()
+			if len(displayItems) > 0 && a.cursor < len(displayItems)-1 {
 				a.cursor++
 			}
 			a.statusMessage = "" // Clear status on navigation
@@ -544,14 +559,16 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.statusMessage = "" // Clear status on navigation
 
 		case key.Matches(msg, a.keys.Bottom):
-			if len(a.items) > 0 {
-				a.cursor = len(a.items) - 1
+			displayItems := a.getDisplayItems()
+			if len(displayItems) > 0 {
+				a.cursor = len(displayItems) - 1
 			}
 
 		case key.Matches(msg, a.keys.Right):
 			// Enter folder or open bookmark
-			if len(a.items) > 0 && a.cursor < len(a.items) {
-				item := a.items[a.cursor]
+			displayItems := a.getDisplayItems()
+			if len(displayItems) > 0 && a.cursor < len(displayItems) {
+				item := displayItems[a.cursor]
 				if item.IsFolder() {
 					// Push current folder to stack
 					if a.currentFolderID != nil {
@@ -622,10 +639,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, a.keys.Edit):
 			// Only edit if there's an item selected
-			if len(a.items) == 0 || a.cursor >= len(a.items) {
+			displayItems := a.getDisplayItems()
+			if len(displayItems) == 0 || a.cursor >= len(displayItems) {
 				return a, nil
 			}
-			item := a.items[a.cursor]
+			item := displayItems[a.cursor]
 			if item.IsFolder() {
 				a.mode = ModeEditFolder
 				a.editItemID = item.Folder.ID
@@ -646,10 +664,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, a.keys.EditTags):
 			// Only edit tags on bookmarks
-			if len(a.items) == 0 || a.cursor >= len(a.items) {
+			displayItems := a.getDisplayItems()
+			if len(displayItems) == 0 || a.cursor >= len(displayItems) {
 				return a, nil
 			}
-			item := a.items[a.cursor]
+			item := displayItems[a.cursor]
 			if item.IsFolder() {
 				// Folders don't have tags
 				return a, nil
@@ -694,9 +713,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.updateFuzzyMatches()
 			return a, a.searchInput.Focus()
 
-		case key.Matches(msg, a.keys.Open):
-			// Open bookmark URL in browser
-			return a.openBookmark()
+		case key.Matches(msg, a.keys.Filter):
+			// Open local filter for current folder
+			a.mode = ModeFilter
+			a.filterInput.Reset()
+			a.filterInput.SetValue(a.filterQuery) // Restore previous filter
+			a.filterInput.Focus()
+			return a, a.filterInput.Focus()
 
 		case key.Matches(msg, a.keys.YankURL):
 			// Yank URL to clipboard
@@ -777,10 +800,6 @@ func (a App) updatePinnedPane(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Already at leftmost pane, do nothing
 		return a, nil
 
-	case key.Matches(msg, a.keys.Open):
-		// Activate pinned item
-		return a.activatePinnedItem()
-
 	case key.Matches(msg, a.keys.Help):
 		a.mode = ModeHelp
 		return a, nil
@@ -850,11 +869,12 @@ func (a *App) unpinSelectedItem() {
 
 // togglePinCurrentItem toggles pin on the currently selected item in browser pane.
 func (a *App) togglePinCurrentItem() {
-	if len(a.items) == 0 || a.cursor >= len(a.items) {
+	displayItems := a.getDisplayItems()
+	if len(displayItems) == 0 || a.cursor >= len(displayItems) {
 		return
 	}
 
-	item := a.items[a.cursor]
+	item := displayItems[a.cursor]
 	if item.IsFolder() {
 		wasPinned := item.Folder.Pinned
 		_ = a.store.TogglePinFolder(item.Folder.ID)
@@ -999,6 +1019,38 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.searchInput, cmd = a.searchInput.Update(msg)
 		// Update fuzzy matches as user types
 		a.updateFuzzyMatches()
+		return a, cmd
+	}
+
+	// Handle local filter mode (/ key)
+	if a.mode == ModeFilter {
+		switch msg.Type {
+		case tea.KeyEsc:
+			// Keep filter active, just close input
+			a.filterQuery = a.filterInput.Value()
+			a.applyFilter()
+			a.mode = ModeNormal
+			return a, nil
+		case tea.KeyEnter:
+			// Apply filter and close
+			a.filterQuery = a.filterInput.Value()
+			a.applyFilter()
+			a.mode = ModeNormal
+			return a, nil
+		case tea.KeyBackspace:
+			// If filter is empty and backspace, clear filter entirely
+			if a.filterInput.Value() == "" {
+				a.filterQuery = ""
+				a.applyFilter()
+			}
+		}
+
+		// Update filter input
+		var cmd tea.Cmd
+		a.filterInput, cmd = a.filterInput.Update(msg)
+		// Live filter as user types
+		a.filterQuery = a.filterInput.Value()
+		a.applyFilter()
 		return a, cmd
 	}
 
@@ -1291,10 +1343,11 @@ func (a App) submitQuickAdd() (tea.Model, tea.Cmd) {
 
 // yankCurrentItem copies the current item to the yank buffer.
 func (a *App) yankCurrentItem() {
-	if len(a.items) == 0 || a.cursor >= len(a.items) {
+	displayItems := a.getDisplayItems()
+	if len(displayItems) == 0 || a.cursor >= len(displayItems) {
 		return
 	}
-	item := a.items[a.cursor]
+	item := displayItems[a.cursor]
 	a.yankedItem = &item
 	a.setStatus("Yanked: " + item.Title())
 }
@@ -1302,11 +1355,12 @@ func (a *App) yankCurrentItem() {
 // cutCurrentItem copies the current item to yank buffer and deletes it.
 // Shows confirmation dialog if confirmDelete is enabled.
 func (a *App) cutCurrentItem() {
-	if len(a.items) == 0 || a.cursor >= len(a.items) {
+	displayItems := a.getDisplayItems()
+	if len(displayItems) == 0 || a.cursor >= len(displayItems) {
 		return
 	}
 
-	item := a.items[a.cursor]
+	item := displayItems[a.cursor]
 	a.cutMode = true
 
 	// Show confirmation if enabled
@@ -1340,11 +1394,12 @@ func (a *App) cutCurrentItem() {
 // deleteCurrentItem deletes the current item without copying to yank buffer.
 // Shows confirmation dialog if confirmDelete is enabled.
 func (a *App) deleteCurrentItem() {
-	if len(a.items) == 0 || a.cursor >= len(a.items) {
+	displayItems := a.getDisplayItems()
+	if len(displayItems) == 0 || a.cursor >= len(displayItems) {
 		return
 	}
 
-	item := a.items[a.cursor]
+	item := displayItems[a.cursor]
 	a.cutMode = false
 
 	// Show confirmation if enabled
@@ -1505,11 +1560,12 @@ func openURLCmd(url string) tea.Cmd {
 
 // openBookmark opens the selected bookmark URL in default browser.
 func (a App) openBookmark() (tea.Model, tea.Cmd) {
-	if len(a.items) == 0 || a.cursor >= len(a.items) {
+	displayItems := a.getDisplayItems()
+	if len(displayItems) == 0 || a.cursor >= len(displayItems) {
 		return a, nil
 	}
 
-	item := a.items[a.cursor]
+	item := displayItems[a.cursor]
 	if item.IsFolder() {
 		return a, nil
 	}
@@ -1527,11 +1583,12 @@ func (a App) openBookmark() (tea.Model, tea.Cmd) {
 
 // yankURLToClipboard copies the selected bookmark URL to system clipboard.
 func (a App) yankURLToClipboard() (tea.Model, tea.Cmd) {
-	if len(a.items) == 0 || a.cursor >= len(a.items) {
+	displayItems := a.getDisplayItems()
+	if len(displayItems) == 0 || a.cursor >= len(displayItems) {
 		return a, nil
 	}
 
-	item := a.items[a.cursor]
+	item := displayItems[a.cursor]
 	if item.IsFolder() {
 		return a, nil
 	}
@@ -1549,6 +1606,35 @@ func (a App) yankURLToClipboard() (tea.Model, tea.Cmd) {
 // View implements tea.Model.
 func (a App) View() string {
 	return a.renderView()
+}
+
+// applyFilter filters current items based on filterQuery using fuzzy matching.
+func (a *App) applyFilter() {
+	if a.filterQuery == "" {
+		a.filteredItems = nil
+		return
+	}
+
+	// Use fuzzy matching on current folder items
+	matches := fuzzy.FindFrom(a.filterQuery, itemStrings(a.items))
+	a.filteredItems = make([]Item, len(matches))
+	for i, m := range matches {
+		a.filteredItems[i] = a.items[m.Index]
+	}
+
+	// Reset cursor if out of bounds
+	displayItems := a.getDisplayItems()
+	if a.cursor >= len(displayItems) {
+		a.cursor = 0
+	}
+}
+
+// getDisplayItems returns filtered items if filter is active, otherwise all items.
+func (a *App) getDisplayItems() []Item {
+	if a.filterQuery != "" && a.filteredItems != nil {
+		return a.filteredItems
+	}
+	return a.items
 }
 
 // buildFolderPaths returns all folder paths in the store.

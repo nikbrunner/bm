@@ -72,11 +72,12 @@ bm export ~/backup/bookmarks.html     # Export to custom path
 
 | Key | Action |
 |-----|--------|
-| `o` / `Enter` | Open URL in browser |
+| `l` / `Enter` | Open URL in browser |
 | `m` | Pin/unpin item (★ shown for pinned) |
 | `Y` | Copy URL to clipboard |
-| `/` | Global fuzzy search |
-| `s` | Cycle sort mode (manual → A-Z → created → visited) |
+| `s` | Global fuzzy search |
+| `/` | Filter current folder |
+| `o` | Cycle sort mode (manual → A-Z → created → visited) |
 
 ### Editing
 
@@ -84,6 +85,7 @@ bm export ~/backup/bookmarks.html     # Export to custom path
 |-----|--------|
 | `a` | Add bookmark |
 | `A` | Add folder |
+| `i` | AI quick add (requires ANTHROPIC_API_KEY) |
 | `e` | Edit selected item |
 | `t` | Edit tags |
 | `y` | Yank (copy) |
