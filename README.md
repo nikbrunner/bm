@@ -5,6 +5,7 @@ A vim-style TUI bookmark manager for the terminal. Ranger/yazi-inspired with Mil
 ## Features
 
 - **Miller columns layout** - Parent | Current | Preview panes
+- **Pinned items** - Quick access to frequently used bookmarks/folders with `m` key
 - **Vim keybindings** - `j/k`, `h/l`, `gg/G`, `y`, `d`, `x`, `p`
 - **Fuzzy search** - Global search across all bookmarks
 - **Browser integration** - Import/export standard HTML bookmark format
@@ -63,7 +64,7 @@ bm export ~/backup/bookmarks.html     # Export to custom path
 | Key | Action |
 |-----|--------|
 | `j/k` | Move down/up |
-| `h/l` | Navigate out/into folder |
+| `h/l` | Navigate out/into folder (h at root → pinned pane) |
 | `gg` | Jump to top |
 | `G` | Jump to bottom |
 
@@ -72,6 +73,7 @@ bm export ~/backup/bookmarks.html     # Export to custom path
 | Key | Action |
 |-----|--------|
 | `o` / `Enter` | Open URL in browser |
+| `m` | Pin/unpin item (★ shown for pinned) |
 | `Y` | Copy URL to clipboard |
 | `/` | Global fuzzy search |
 | `s` | Cycle sort mode (manual → A-Z → created → visited) |
@@ -103,7 +105,7 @@ Bookmarks are stored in `~/.config/bm/bookmarks.json`:
 ```json
 {
   "folders": [
-    { "id": "uuid", "name": "Development", "parentId": null }
+    { "id": "uuid", "name": "Development", "parentId": null, "pinned": false }
   ],
   "bookmarks": [
     {
@@ -113,7 +115,8 @@ Bookmarks are stored in `~/.config/bm/bookmarks.json`:
       "folderId": "uuid",
       "tags": ["code", "git"],
       "createdAt": "2025-01-15T10:30:00Z",
-      "visitedAt": "2025-01-20T14:22:00Z"
+      "visitedAt": "2025-01-20T14:22:00Z",
+      "pinned": true
     }
   ]
 }

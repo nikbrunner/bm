@@ -78,6 +78,7 @@ TUI Keybindings:
   Actions:
     l/Enter     Open bookmark / enter folder
     o           Open bookmark in browser
+    m           Pin/unpin item
     Y           Copy URL to clipboard
     /           Global fuzzy search
     s           Cycle sort mode

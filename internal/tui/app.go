@@ -40,6 +40,14 @@ const (
 	SortVisited                 // by visit date (most recent first)
 )
 
+// FocusedPane represents which pane has focus.
+type FocusedPane int
+
+const (
+	PanePinned  FocusedPane = iota // leftmost pane with pinned items
+	PaneBrowser                    // Miller column browser pane
+)
+
 // fuzzyMatch represents a fuzzy search match with highlighting info.
 type fuzzyMatch struct {
 	Item           Item
@@ -64,6 +72,11 @@ type App struct {
 	keys   KeyMap
 	styles Styles
 
+	// Focus state
+	focusedPane  FocusedPane // which pane has focus
+	pinnedCursor int         // cursor in pinned pane
+	pinnedItems  []Item      // cached pinned items (folders first, then bookmarks)
+
 	// Navigation state
 	currentFolderID *string  // nil = root
 	folderStack     []string // breadcrumb trail of folder IDs
@@ -74,11 +87,11 @@ type App struct {
 	sortMode SortMode
 
 	// Filter/search
-	filterQuery   string
-	searchInput   textinput.Model
-	fuzzyMatches  []fuzzyMatch    // Current fuzzy match results
-	fuzzyCursor   int             // Selected index in fuzzy results
-	allItems      []Item          // All items in current folder (unfiltered)
+	filterQuery  string
+	searchInput  textinput.Model
+	fuzzyMatches []fuzzyMatch // Current fuzzy match results
+	fuzzyCursor  int          // Selected index in fuzzy results
+	allItems     []Item       // All items in current folder (unfiltered)
 
 	// For gg command
 	lastKeyWasG bool
@@ -149,6 +162,8 @@ func NewApp(params AppParams) App {
 		store:           params.Store,
 		keys:            keys,
 		styles:          styles,
+		focusedPane:     PaneBrowser, // will be updated after refreshPinnedItems
+		pinnedCursor:    0,
 		currentFolderID: nil,
 		folderStack:     []string{},
 		cursor:          0,
@@ -163,6 +178,13 @@ func NewApp(params AppParams) App {
 	}
 
 	app.refreshItems()
+	app.refreshPinnedItems()
+
+	// Start focused on pinned pane if there are pinned items
+	if len(app.pinnedItems) > 0 {
+		app.focusedPane = PanePinned
+	}
+
 	return app
 }
 
@@ -224,6 +246,39 @@ func (a *App) refreshItems() {
 			Bookmark: &bookmarks[i],
 		})
 	}
+}
+
+// refreshPinnedItems rebuilds the pinnedItems slice from the store.
+func (a *App) refreshPinnedItems() {
+	a.pinnedItems = []Item{}
+
+	// Get pinned folders and bookmarks
+	folders := a.store.GetPinnedFolders()
+	bookmarks := a.store.GetPinnedBookmarks()
+
+	// Add folders first (same convention as browser)
+	for i := range folders {
+		a.pinnedItems = append(a.pinnedItems, Item{
+			Kind:   ItemFolder,
+			Folder: &folders[i],
+		})
+	}
+
+	// Add bookmarks
+	for i := range bookmarks {
+		a.pinnedItems = append(a.pinnedItems, Item{
+			Kind:     ItemBookmark,
+			Bookmark: &bookmarks[i],
+		})
+	}
+}
+
+// selectedPinnedItem returns the currently selected pinned item, or nil if none.
+func (a *App) selectedPinnedItem() *Item {
+	if len(a.pinnedItems) == 0 || a.pinnedCursor >= len(a.pinnedItems) {
+		return nil
+	}
+	return &a.pinnedItems[a.pinnedCursor]
 }
 
 // buildFolderStack builds the folder stack from root to the given parent folder.
@@ -356,7 +411,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a.updateModal(msg)
 		}
 
-		// Handle gg sequence
+		// Handle pinned pane navigation
+		if a.focusedPane == PanePinned {
+			return a.updatePinnedPane(msg)
+		}
+
+		// Browser pane: Handle gg sequence
 		if key.Matches(msg, a.keys.Top) {
 			if a.lastKeyWasG {
 				// This is the second g - go to top
@@ -387,6 +447,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if key.Matches(msg, a.keys.Cut) {
 			a.lastKeyWasG = false
 			a.cutCurrentItem()
+			return a, nil
+		}
+
+		// Handle m - toggle pin
+		if key.Matches(msg, a.keys.Pin) {
+			a.lastKeyWasG = false
+			a.togglePinCurrentItem()
 			return a, nil
 		}
 
@@ -435,21 +502,24 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case key.Matches(msg, a.keys.Left):
-			// Go back to parent folder
-			if a.currentFolderID != nil {
-				if len(a.folderStack) > 0 {
-					// Pop from stack
-					lastIdx := len(a.folderStack) - 1
-					parentID := a.folderStack[lastIdx]
-					a.folderStack = a.folderStack[:lastIdx]
-					a.currentFolderID = &parentID
-				} else {
-					// Back to root
-					a.currentFolderID = nil
-				}
-				a.cursor = 0
-				a.refreshItems()
+			// At root level: switch to pinned pane
+			if a.currentFolderID == nil {
+				a.focusedPane = PanePinned
+				return a, nil
 			}
+			// Go back to parent folder
+			if len(a.folderStack) > 0 {
+				// Pop from stack
+				lastIdx := len(a.folderStack) - 1
+				parentID := a.folderStack[lastIdx]
+				a.folderStack = a.folderStack[:lastIdx]
+				a.currentFolderID = &parentID
+			} else {
+				// Back to root
+				a.currentFolderID = nil
+			}
+			a.cursor = 0
+			a.refreshItems()
 
 		case key.Matches(msg, a.keys.PasteAfter):
 			a.pasteItem(false) // after cursor
@@ -560,6 +630,171 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return a, nil
+}
+
+// updatePinnedPane handles key events when the pinned pane is focused.
+func (a App) updatePinnedPane(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Handle gg sequence
+	if key.Matches(msg, a.keys.Top) {
+		if a.lastKeyWasG {
+			a.pinnedCursor = 0
+			a.lastKeyWasG = false
+			return a, nil
+		}
+		a.lastKeyWasG = true
+		return a, nil
+	}
+
+	// Handle d - unpin (in pinned pane, d just unpins, doesn't delete)
+	if key.Matches(msg, a.keys.Delete) {
+		a.lastKeyWasG = false
+		a.unpinSelectedItem()
+		return a, nil
+	}
+
+	// Handle x - unpin (same as d in pinned pane)
+	if key.Matches(msg, a.keys.Cut) {
+		a.lastKeyWasG = false
+		a.unpinSelectedItem()
+		return a, nil
+	}
+
+	// Handle m - unpin
+	if key.Matches(msg, a.keys.Pin) {
+		a.lastKeyWasG = false
+		a.unpinSelectedItem()
+		return a, nil
+	}
+
+	a.lastKeyWasG = false
+
+	switch {
+	case key.Matches(msg, a.keys.Quit):
+		return a, tea.Quit
+
+	case key.Matches(msg, a.keys.Down):
+		if len(a.pinnedItems) > 0 && a.pinnedCursor < len(a.pinnedItems)-1 {
+			a.pinnedCursor++
+		}
+		a.statusMessage = ""
+
+	case key.Matches(msg, a.keys.Up):
+		if a.pinnedCursor > 0 {
+			a.pinnedCursor--
+		}
+		a.statusMessage = ""
+
+	case key.Matches(msg, a.keys.Bottom):
+		if len(a.pinnedItems) > 0 {
+			a.pinnedCursor = len(a.pinnedItems) - 1
+		}
+
+	case key.Matches(msg, a.keys.Right):
+		// Switch to browser pane
+		a.focusedPane = PaneBrowser
+
+	case key.Matches(msg, a.keys.Left):
+		// Already at leftmost pane, do nothing
+		return a, nil
+
+	case key.Matches(msg, a.keys.Open):
+		// Activate pinned item
+		return a.activatePinnedItem()
+
+	case key.Matches(msg, a.keys.Help):
+		a.mode = ModeHelp
+		return a, nil
+	}
+
+	// Handle Enter key for activating pinned items
+	if msg.Type == tea.KeyEnter {
+		return a.activatePinnedItem()
+	}
+
+	return a, nil
+}
+
+// activatePinnedItem opens a bookmark or navigates to a folder from the pinned pane.
+func (a *App) activatePinnedItem() (tea.Model, tea.Cmd) {
+	item := a.selectedPinnedItem()
+	if item == nil {
+		return a, nil
+	}
+
+	if item.IsFolder() {
+		// Navigate browser to this folder
+		a.buildFolderStack(item.Folder.ParentID)
+		id := item.Folder.ID
+		a.currentFolderID = &id
+		a.cursor = 0
+		a.refreshItems()
+		a.focusedPane = PaneBrowser
+		return a, nil
+	}
+
+	// Open bookmark URL
+	if item.Bookmark != nil && item.Bookmark.URL != "" {
+		// Update visited time
+		now := time.Now()
+		if b := a.store.GetBookmarkByID(item.Bookmark.ID); b != nil {
+			b.VisitedAt = &now
+		}
+		a.refreshPinnedItems()
+		return a, openURLCmd(item.Bookmark.URL)
+	}
+	return a, nil
+}
+
+// unpinSelectedItem unpins the currently selected item in the pinned pane.
+func (a *App) unpinSelectedItem() {
+	item := a.selectedPinnedItem()
+	if item == nil {
+		return
+	}
+
+	if item.IsFolder() {
+		_ = a.store.TogglePinFolder(item.Folder.ID)
+		a.statusMessage = "Unpinned: " + item.Folder.Name
+	} else {
+		_ = a.store.TogglePinBookmark(item.Bookmark.ID)
+		a.statusMessage = "Unpinned: " + item.Bookmark.Title
+	}
+
+	a.refreshPinnedItems()
+
+	// Adjust cursor if needed
+	if a.pinnedCursor >= len(a.pinnedItems) && a.pinnedCursor > 0 {
+		a.pinnedCursor--
+	}
+}
+
+// togglePinCurrentItem toggles pin on the currently selected item in browser pane.
+func (a *App) togglePinCurrentItem() {
+	if len(a.items) == 0 || a.cursor >= len(a.items) {
+		return
+	}
+
+	item := a.items[a.cursor]
+	if item.IsFolder() {
+		wasPinned := item.Folder.Pinned
+		_ = a.store.TogglePinFolder(item.Folder.ID)
+		if wasPinned {
+			a.statusMessage = "Unpinned: " + item.Folder.Name
+		} else {
+			a.statusMessage = "Pinned: " + item.Folder.Name
+		}
+	} else {
+		wasPinned := item.Bookmark.Pinned
+		_ = a.store.TogglePinBookmark(item.Bookmark.ID)
+		if wasPinned {
+			a.statusMessage = "Unpinned: " + item.Bookmark.Title
+		} else {
+			a.statusMessage = "Pinned: " + item.Bookmark.Title
+		}
+	}
+
+	a.refreshItems()
+	a.refreshPinnedItems()
 }
 
 // updateModal handles key events when in a modal mode.
@@ -1025,6 +1260,25 @@ func (a *App) pasteItem(before bool) {
 	a.setStatus("Pasted: " + title)
 }
 
+// openURLCmd returns a tea.Cmd that opens a URL in the default browser.
+func openURLCmd(url string) tea.Cmd {
+	return func() tea.Msg {
+		var openCmd *exec.Cmd
+		switch runtime.GOOS {
+		case "darwin":
+			openCmd = exec.Command("open", url)
+		case "linux":
+			openCmd = exec.Command("xdg-open", url)
+		case "windows":
+			openCmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+		}
+		if openCmd != nil {
+			_ = openCmd.Start()
+		}
+		return nil
+	}
+}
+
 // openBookmark opens the selected bookmark URL in default browser.
 func (a App) openBookmark() (tea.Model, tea.Cmd) {
 	if len(a.items) == 0 || a.cursor >= len(a.items) {
@@ -1044,25 +1298,7 @@ func (a App) openBookmark() (tea.Model, tea.Cmd) {
 		a.refreshItems()
 	}
 
-	// Open URL in default browser
-	url := item.Bookmark.URL
-	cmd := func() tea.Msg {
-		var openCmd *exec.Cmd
-		switch runtime.GOOS {
-		case "darwin":
-			openCmd = exec.Command("open", url)
-		case "linux":
-			openCmd = exec.Command("xdg-open", url)
-		case "windows":
-			openCmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
-		}
-		if openCmd != nil {
-			_ = openCmd.Start()
-		}
-		return nil
-	}
-
-	return a, cmd
+	return a, openURLCmd(item.Bookmark.URL)
 }
 
 // yankURLToClipboard copies the selected bookmark URL to system clipboard.

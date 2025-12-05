@@ -1,5 +1,7 @@
 package model
 
+import "fmt"
+
 // Store holds all bookmarks and folders.
 type Store struct {
 	Folders   []Folder   `json:"folders"`
@@ -230,4 +232,50 @@ func (s *Store) findFolderByNameAndParent(name string, parentID *string) *Folder
 		}
 	}
 	return nil
+}
+
+// GetPinnedBookmarks returns all bookmarks with Pinned=true.
+func (s *Store) GetPinnedBookmarks() []Bookmark {
+	var result []Bookmark
+	for _, b := range s.Bookmarks {
+		if b.Pinned {
+			result = append(result, b)
+		}
+	}
+	return result
+}
+
+// GetPinnedFolders returns all folders with Pinned=true.
+func (s *Store) GetPinnedFolders() []Folder {
+	var result []Folder
+	for _, f := range s.Folders {
+		if f.Pinned {
+			result = append(result, f)
+		}
+	}
+	return result
+}
+
+// TogglePinBookmark toggles the Pinned field of a bookmark by ID.
+// Returns an error if the bookmark is not found.
+func (s *Store) TogglePinBookmark(id string) error {
+	for i := range s.Bookmarks {
+		if s.Bookmarks[i].ID == id {
+			s.Bookmarks[i].Pinned = !s.Bookmarks[i].Pinned
+			return nil
+		}
+	}
+	return fmt.Errorf("bookmark not found: %s", id)
+}
+
+// TogglePinFolder toggles the Pinned field of a folder by ID.
+// Returns an error if the folder is not found.
+func (s *Store) TogglePinFolder(id string) error {
+	for i := range s.Folders {
+		if s.Folders[i].ID == id {
+			s.Folders[i].Pinned = !s.Folders[i].Pinned
+			return nil
+		}
+	}
+	return fmt.Errorf("folder not found: %s", id)
 }

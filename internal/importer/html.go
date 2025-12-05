@@ -21,7 +21,7 @@ func ParseHTMLBookmarks(r io.Reader) ([]model.Folder, []model.Bookmark, error) {
 	var bookmarks []model.Bookmark
 
 	// Track current folder stack for hierarchy
-	var folderStack []*string // stack of folder IDs, nil = root
+	var folderStack []*string       // stack of folder IDs, nil = root
 	var pendingFolder *model.Folder // folder waiting to be pushed on next DL
 
 	var parse func(*html.Node)

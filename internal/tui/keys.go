@@ -4,28 +4,29 @@ import "github.com/charmbracelet/bubbles/key"
 
 // KeyMap defines all key bindings for the application.
 type KeyMap struct {
-	Up          key.Binding
-	Down        key.Binding
-	Left        key.Binding
-	Right       key.Binding
-	Top         key.Binding
-	Bottom      key.Binding
-	Yank        key.Binding
-	Delete      key.Binding
-	Cut         key.Binding
-	PasteAfter  key.Binding
-	PasteBefore key.Binding
-	AddBookmark key.Binding
-	AddFolder   key.Binding
-	Edit        key.Binding
-	EditTags    key.Binding
+	Up            key.Binding
+	Down          key.Binding
+	Left          key.Binding
+	Right         key.Binding
+	Top           key.Binding
+	Bottom        key.Binding
+	Yank          key.Binding
+	Delete        key.Binding
+	Cut           key.Binding
+	PasteAfter    key.Binding
+	PasteBefore   key.Binding
+	AddBookmark   key.Binding
+	AddFolder     key.Binding
+	Edit          key.Binding
+	EditTags      key.Binding
 	Sort          key.Binding
 	ToggleConfirm key.Binding
 	Search        key.Binding
-	Open        key.Binding
-	YankURL     key.Binding
-	Help        key.Binding
-	Quit        key.Binding
+	Open          key.Binding
+	YankURL       key.Binding
+	Pin           key.Binding
+	Help          key.Binding
+	Quit          key.Binding
 }
 
 // DefaultKeyMap returns the default vim-style key bindings.
@@ -110,6 +111,10 @@ func DefaultKeyMap() KeyMap {
 		YankURL: key.NewBinding(
 			key.WithKeys("Y"),
 			key.WithHelp("Y", "yank URL"),
+		),
+		Pin: key.NewBinding(
+			key.WithKeys("m"),
+			key.WithHelp("m", "pin/unpin"),
 		),
 		Help: key.NewBinding(
 			key.WithKeys("?"),

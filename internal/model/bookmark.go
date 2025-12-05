@@ -11,6 +11,7 @@ type Bookmark struct {
 	Tags      []string   `json:"tags"`
 	CreatedAt time.Time  `json:"createdAt"`
 	VisitedAt *time.Time `json:"visitedAt"` // nil = never visited
+	Pinned    bool       `json:"pinned"`
 }
 
 // NewBookmarkParams holds parameters for creating a new Bookmark.

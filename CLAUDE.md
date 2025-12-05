@@ -56,15 +56,17 @@ internal/
 
 **TUI App Structure**: `tui.App` is the main bubbletea model with:
 - Modal modes: `ModeNormal`, `ModeAddBookmark`, `ModeEditFolder`, `ModeSearch`, `ModeHelp`, `ModeConfirmDelete`
+- Focus states: `PanePinned` (leftmost pinned items pane) and `PaneBrowser` (Miller columns)
 - Fuzzy search over all items (not just current folder) via `allItems`/`fuzzyMatches`
-- View renders 3-pane Miller columns (parent | current | preview)
+- View renders 3-pane Miller columns (parent | current | preview), or 4-pane when pinned items exist in subfolders
+- Pinned items shown in leftmost pane with `★` prefix; `m` toggles pin/unpin
 - `confirmDelete` flag (toggled with `c`) controls whether delete/cut shows confirmation
 
 **Item Union Type**: `tui.Item` wraps either a `Folder` or `Bookmark` for unified list handling.
 
 **CLI Modes**: Subcommands are `help`, `init`, `reset`, `import`, `export`. Anything else is treated as a fuzzy search query. No args opens the full TUI.
 
-**Keybindings**: Single-key actions for editing (`y` yank, `d` delete, `x` cut), `gg` for top. `c` toggles delete confirmations (on by default). `?` shows help overlay. `l`/`Enter` opens bookmarks or enters folders.
+**Keybindings**: Single-key actions for editing (`y` yank, `d` delete, `x` cut), `gg` for top. `m` toggles pin/unpin on items. `h` at root switches to pinned pane, `l` returns to browser. `c` toggles delete confirmations (on by default). `?` shows help overlay. `l`/`Enter` opens bookmarks or enters folders.
 
 ### Dependencies
 

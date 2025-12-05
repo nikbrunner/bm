@@ -5,6 +5,7 @@ type Folder struct {
 	ID       string  `json:"id"`
 	Name     string  `json:"name"`
 	ParentID *string `json:"parentId"` // nil = root level
+	Pinned   bool    `json:"pinned"`
 }
 
 // NewFolderParams holds parameters for creating a new Folder.

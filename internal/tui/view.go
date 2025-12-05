@@ -15,28 +15,71 @@ func (a App) renderView() string {
 		return a.renderModal()
 	}
 
-	// Calculate pane widths (3 columns)
-	paneWidth := (a.width - 8) / 3 // account for borders and padding
-	if paneWidth < 20 {
-		paneWidth = 20
-	}
 	paneHeight := a.height - 5 // account for help bar (3 lines), app top padding (1), and borders
 	if paneHeight < 5 {
 		paneHeight = 5
 	}
 
-	// Build three panes
-	leftPane := a.renderParentPane(paneWidth, paneHeight)
-	middlePane := a.renderCurrentPane(paneWidth, paneHeight)
-	rightPane := a.renderPreviewPane(paneWidth, paneHeight)
+	var columns string
 
-	// Join panes horizontally
-	columns := lipgloss.JoinHorizontal(
-		lipgloss.Top,
-		leftPane,
-		middlePane,
-		rightPane,
-	)
+	// Determine layout based on pinned items and current location
+	hasPinnedItems := len(a.pinnedItems) > 0
+	atRoot := a.currentFolderID == nil
+
+	if hasPinnedItems && atRoot {
+		// At root with pinned items: 3 panes (pinned replaces parent since both would show "bm/bookmarks")
+		paneWidth := (a.width - 8) / 3
+		if paneWidth < 20 {
+			paneWidth = 20
+		}
+
+		pinnedPane := a.renderPinnedPane(paneWidth, paneHeight)
+		middlePane := a.renderCurrentPane(paneWidth, paneHeight)
+		rightPane := a.renderPreviewPane(paneWidth, paneHeight)
+
+		columns = lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			pinnedPane,
+			middlePane,
+			rightPane,
+		)
+	} else if hasPinnedItems && !atRoot {
+		// In subfolder with pinned items: 4 panes (pinned | parent | current | preview)
+		paneWidth := (a.width - 10) / 4
+		if paneWidth < 15 {
+			paneWidth = 15
+		}
+
+		pinnedPane := a.renderPinnedPane(paneWidth, paneHeight)
+		leftPane := a.renderParentPane(paneWidth, paneHeight)
+		middlePane := a.renderCurrentPane(paneWidth, paneHeight)
+		rightPane := a.renderPreviewPane(paneWidth, paneHeight)
+
+		columns = lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			pinnedPane,
+			leftPane,
+			middlePane,
+			rightPane,
+		)
+	} else {
+		// No pinned items: 3 panes (parent | current | preview)
+		paneWidth := (a.width - 8) / 3
+		if paneWidth < 20 {
+			paneWidth = 20
+		}
+
+		leftPane := a.renderParentPane(paneWidth, paneHeight)
+		middlePane := a.renderCurrentPane(paneWidth, paneHeight)
+		rightPane := a.renderPreviewPane(paneWidth, paneHeight)
+
+		columns = lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			leftPane,
+			middlePane,
+			rightPane,
+		)
+	}
 
 	// Add help bar at bottom
 	helpBar := a.renderHelpBar()
@@ -44,6 +87,85 @@ func (a App) renderView() string {
 	return a.styles.App.Render(
 		lipgloss.JoinVertical(lipgloss.Left, columns, helpBar),
 	)
+}
+
+// renderPinnedPane renders the leftmost pane with pinned items.
+func (a App) renderPinnedPane(width, height int) string {
+	var content strings.Builder
+
+	// Header
+	content.WriteString(a.styles.Title.Render("bm") + "\n")
+	content.WriteString(a.styles.Empty.Render("bookmarks") + "\n\n")
+
+	// Pinned section header
+	content.WriteString("── Pinned ──\n")
+
+	visibleHeight := height - 4 // account for header and divider
+	if visibleHeight < 1 {
+		visibleHeight = 1
+	}
+
+	if len(a.pinnedItems) == 0 {
+		content.WriteString(a.styles.Empty.Render("(no pinned items)"))
+	} else {
+		// Calculate viewport offset to keep cursor visible
+		offset := calculateViewportOffset(a.pinnedCursor, len(a.pinnedItems), visibleHeight)
+
+		for i, item := range a.pinnedItems {
+			// Skip items before viewport
+			if i < offset {
+				continue
+			}
+			// Stop after viewport is filled
+			if i >= offset+visibleHeight {
+				break
+			}
+			// Highlight selected item only when pinned pane is focused
+			isSelected := a.focusedPane == PanePinned && i == a.pinnedCursor
+			line := a.renderPinnedItem(item, isSelected, width-4)
+			content.WriteString(line + "\n")
+		}
+	}
+
+	// Use active style when focused, regular style otherwise
+	if a.focusedPane == PanePinned {
+		return a.styles.PaneActive.
+			Width(width).
+			Height(height).
+			Render(strings.TrimRight(content.String(), "\n"))
+	}
+	return a.styles.Pane.
+		Width(width).
+		Height(height).
+		Render(strings.TrimRight(content.String(), "\n"))
+}
+
+// renderPinnedItem renders an item in the pinned pane.
+func (a App) renderPinnedItem(item Item, selected bool, maxWidth int) string {
+	var prefix, text string
+
+	if item.IsFolder() {
+		prefix = "★ 📁 "
+		text = item.Title()
+	} else {
+		prefix = "★ "
+		text = item.Title()
+	}
+
+	// Truncate if too long
+	line := prefix + text
+	if len(line) > maxWidth {
+		line = line[:maxWidth-3] + "..."
+	}
+
+	if selected {
+		// Pad to fill width for selection highlight
+		for len(line) < maxWidth {
+			line += " "
+		}
+		return a.styles.ItemSelected.Render(line)
+	}
+	return a.styles.Item.Render(line)
 }
 
 // renderModal renders the current modal dialog.
@@ -207,13 +329,21 @@ func (a App) renderCurrentPane(width, height int) string {
 			if i >= offset+visibleHeight {
 				break
 			}
-			isSelected := i == a.cursor
+			// Only show selection when browser pane is focused
+			isSelected := a.focusedPane == PaneBrowser && i == a.cursor
 			line := a.renderItem(item, isSelected, width-4)
 			content.WriteString(line + "\n")
 		}
 	}
 
-	return a.styles.PaneActive.
+	// Use active style when browser pane is focused
+	if a.focusedPane == PaneBrowser {
+		return a.styles.PaneActive.
+			Width(width).
+			Height(height).
+			Render(strings.TrimRight(content.String(), "\n"))
+	}
+	return a.styles.Pane.
 		Width(width).
 		Height(height).
 		Render(strings.TrimRight(content.String(), "\n"))
@@ -288,12 +418,23 @@ func (a App) renderPreviewPane(width, height int) string {
 
 func (a App) renderItem(item Item, selected bool, maxWidth int) string {
 	var prefix, text string
+	var isPinned bool
 
 	if item.IsFolder() {
-		prefix = "📁 "
+		isPinned = item.Folder.Pinned
+		if isPinned {
+			prefix = "★ 📁 "
+		} else {
+			prefix = "📁 "
+		}
 		text = item.Title()
 	} else {
-		prefix = "   "
+		isPinned = item.Bookmark.Pinned
+		if isPinned {
+			prefix = "★ "
+		} else {
+			prefix = "   "
+		}
 		text = item.Title()
 	}
 
@@ -502,7 +643,7 @@ func (a App) renderHelpBar() string {
 	}
 
 	// Hints line
-	hints := "j/k: move  l: open  /: find  s: sort  c: confirm  a: add  e: edit  d: del  x: cut  p: paste  ?: help  q: quit"
+	hints := "j/k: move  h/l: nav  o: open  m: pin  /: find  a: add  e: edit  d: del  ?: help  q: quit"
 
 	// Style without padding for individual lines
 	lineStyle := lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#666666", Dark: "#888888"})
@@ -547,6 +688,7 @@ func (a App) renderHelpOverlay() string {
 	content.WriteString("\n")
 	content.WriteString("  o/Enter   Open URL in browser\n")
 	content.WriteString("  Y         Yank URL to clipboard\n")
+	content.WriteString("  m         Pin/unpin item\n")
 	content.WriteString("  /         Global search\n")
 	content.WriteString("  s         Cycle sort mode\n")
 	content.WriteString("  c         Toggle delete confirmations\n")

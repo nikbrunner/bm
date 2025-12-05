@@ -9,7 +9,7 @@ import (
 )
 
 // Helper functions for pointers
-func stringPtr(s string) *string    { return &s }
+func stringPtr(s string) *string     { return &s }
 func timePtr(t time.Time) *time.Time { return &t }
 
 func TestBookmark_JSONSerialization(t *testing.T) {
@@ -306,5 +306,122 @@ func TestStore_ImportMerge_CountsCorrectly(t *testing.T) {
 	}
 	if len(store.Bookmarks) != 3 {
 		t.Errorf("expected 3 bookmarks, got %d", len(store.Bookmarks))
+	}
+}
+
+// === Pinned Items Tests ===
+
+func TestStore_GetPinnedBookmarks(t *testing.T) {
+	store := model.Store{
+		Folders: []model.Folder{},
+		Bookmarks: []model.Bookmark{
+			{ID: "b1", Title: "Pinned One", URL: "https://one.com", FolderID: nil, Pinned: true},
+			{ID: "b2", Title: "Not Pinned", URL: "https://two.com", FolderID: nil, Pinned: false},
+			{ID: "b3", Title: "Pinned Two", URL: "https://three.com", FolderID: nil, Pinned: true},
+		},
+	}
+
+	pinned := store.GetPinnedBookmarks()
+	if len(pinned) != 2 {
+		t.Errorf("expected 2 pinned bookmarks, got %d", len(pinned))
+	}
+
+	// Verify correct bookmarks returned
+	ids := make(map[string]bool)
+	for _, b := range pinned {
+		ids[b.ID] = true
+	}
+	if !ids["b1"] || !ids["b3"] {
+		t.Error("expected pinned bookmarks b1 and b3")
+	}
+}
+
+func TestStore_GetPinnedFolders(t *testing.T) {
+	store := model.Store{
+		Folders: []model.Folder{
+			{ID: "f1", Name: "Pinned Folder", ParentID: nil, Pinned: true},
+			{ID: "f2", Name: "Not Pinned", ParentID: nil, Pinned: false},
+			{ID: "f3", Name: "Another Pinned", ParentID: nil, Pinned: true},
+		},
+		Bookmarks: []model.Bookmark{},
+	}
+
+	pinned := store.GetPinnedFolders()
+	if len(pinned) != 2 {
+		t.Errorf("expected 2 pinned folders, got %d", len(pinned))
+	}
+
+	ids := make(map[string]bool)
+	for _, f := range pinned {
+		ids[f.ID] = true
+	}
+	if !ids["f1"] || !ids["f3"] {
+		t.Error("expected pinned folders f1 and f3")
+	}
+}
+
+func TestStore_TogglePinBookmark(t *testing.T) {
+	store := model.Store{
+		Folders: []model.Folder{},
+		Bookmarks: []model.Bookmark{
+			{ID: "b1", Title: "Test", URL: "https://test.com", FolderID: nil, Pinned: false},
+		},
+	}
+
+	// Toggle on
+	err := store.TogglePinBookmark("b1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !store.Bookmarks[0].Pinned {
+		t.Error("expected bookmark to be pinned after toggle")
+	}
+
+	// Toggle off
+	err = store.TogglePinBookmark("b1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if store.Bookmarks[0].Pinned {
+		t.Error("expected bookmark to be unpinned after second toggle")
+	}
+
+	// Non-existent bookmark
+	err = store.TogglePinBookmark("nonexistent")
+	if err == nil {
+		t.Error("expected error for non-existent bookmark")
+	}
+}
+
+func TestStore_TogglePinFolder(t *testing.T) {
+	store := model.Store{
+		Folders: []model.Folder{
+			{ID: "f1", Name: "Test", ParentID: nil, Pinned: false},
+		},
+		Bookmarks: []model.Bookmark{},
+	}
+
+	// Toggle on
+	err := store.TogglePinFolder("f1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !store.Folders[0].Pinned {
+		t.Error("expected folder to be pinned after toggle")
+	}
+
+	// Toggle off
+	err = store.TogglePinFolder("f1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if store.Folders[0].Pinned {
+		t.Error("expected folder to be unpinned after second toggle")
+	}
+
+	// Non-existent folder
+	err = store.TogglePinFolder("nonexistent")
+	if err == nil {
+		t.Error("expected error for non-existent folder")
 	}
 }
