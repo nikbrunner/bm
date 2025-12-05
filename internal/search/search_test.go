@@ -160,3 +160,40 @@ func TestFuzzySearchBookmarks_SortedByScore(t *testing.T) {
 		t.Errorf("expected 'Router' as first result (exact match), got %s", results[0].Bookmark.Title)
 	}
 }
+
+func TestFuzzySearchBookmarks_EmptyStore(t *testing.T) {
+	store := model.NewStore()
+
+	results := FuzzySearchBookmarks(store, "anything")
+
+	if len(results) != 0 {
+		t.Errorf("expected 0 results from empty store, got %d", len(results))
+	}
+}
+
+func TestFuzzySearchBookmarks_SpecialCharacters(t *testing.T) {
+	store := model.NewStore()
+	store.AddBookmark(model.Bookmark{
+		ID:        "b1",
+		Title:     "C++ Programming Guide",
+		URL:       "https://cpp.com",
+		CreatedAt: time.Now(),
+	})
+	store.AddBookmark(model.Bookmark{
+		ID:        "b2",
+		Title:     "Node.js Documentation",
+		URL:       "https://nodejs.org",
+		CreatedAt: time.Now(),
+	})
+
+	// Search with special chars
+	results := FuzzySearchBookmarks(store, "C++")
+	if len(results) < 1 {
+		t.Error("expected to find C++ bookmark")
+	}
+
+	results = FuzzySearchBookmarks(store, "Node.js")
+	if len(results) < 1 {
+		t.Error("expected to find Node.js bookmark")
+	}
+}

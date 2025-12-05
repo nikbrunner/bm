@@ -233,7 +233,7 @@ Export bookmarks to standard Netscape bookmark HTML format (compatible with all 
 - [x] `bm <query>` - Quick fuzzy open mode
 - [x] `bm export [file]` - HTML export (default: ~/Downloads/bookmarks-export-YYYY-MM-DD.html)
 
-### Phase 7: Final Polish
-- [ ] Edge case testing
-- [ ] README documentation
-- [ ] Installation instructions
+### Phase 7: Final Polish ✅
+- [x] Edge case testing (105 tests)
+- [x] README documentation
+- [x] Installation instructions
