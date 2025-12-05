@@ -1555,3 +1555,218 @@ func TestApp_FuzzyFinder_SelectBookmark(t *testing.T) {
 		t.Error("expected cursor to be on TanStack Router bookmark")
 	}
 }
+
+// === Phase 5 Tests: Actions & Polish ===
+
+func TestApp_OpenBookmark_UpdatesVisitedAt(t *testing.T) {
+	now := time.Now()
+	store := &model.Store{
+		Folders: []model.Folder{},
+		Bookmarks: []model.Bookmark{
+			{ID: "b1", Title: "Test", URL: "https://example.com", FolderID: nil, CreatedAt: now, VisitedAt: nil},
+		},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+
+	// Before opening, visitedAt should be nil
+	if app.Items()[0].Bookmark.VisitedAt != nil {
+		t.Error("visitedAt should be nil initially")
+	}
+
+	// Press 'o' to open bookmark
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	app = updated.(tui.App)
+
+	// visitedAt should now be set
+	if app.Items()[0].Bookmark.VisitedAt == nil {
+		t.Error("visitedAt should be set after opening")
+	}
+
+	// visitedAt should be recent (within last second)
+	if time.Since(*app.Items()[0].Bookmark.VisitedAt) > time.Second {
+		t.Error("visitedAt should be recent")
+	}
+}
+
+func TestApp_OpenBookmark_OnFolder_DoesNothing(t *testing.T) {
+	store := &model.Store{
+		Folders: []model.Folder{
+			{ID: "f1", Name: "Test Folder", ParentID: nil},
+		},
+		Bookmarks: []model.Bookmark{},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+
+	// Press 'o' on a folder - should do nothing (no crash)
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	app = updated.(tui.App)
+
+	// Should still be in normal mode
+	if app.Mode() != tui.ModeNormal {
+		t.Error("pressing 'o' on folder should stay in normal mode")
+	}
+}
+
+func TestApp_OpenBookmark_EmptyList(t *testing.T) {
+	store := &model.Store{
+		Folders:   []model.Folder{},
+		Bookmarks: []model.Bookmark{},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+
+	// Press 'o' on empty list - should do nothing (no crash)
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	app = updated.(tui.App)
+
+	// Should still be in normal mode
+	if app.Mode() != tui.ModeNormal {
+		t.Error("pressing 'o' on empty list should stay in normal mode")
+	}
+}
+
+func TestApp_YankURL_CopiesURLToClipboard(t *testing.T) {
+	store := &model.Store{
+		Folders: []model.Folder{},
+		Bookmarks: []model.Bookmark{
+			{ID: "b1", Title: "Test", URL: "https://example.com", FolderID: nil},
+		},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+
+	// Press 'Y' to yank URL
+	updated, cmd := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'Y'}})
+	app = updated.(tui.App)
+
+	// Should return a command (clipboard operation)
+	if cmd == nil {
+		t.Error("expected a command to be returned for clipboard operation")
+	}
+
+	// Should still be in normal mode
+	if app.Mode() != tui.ModeNormal {
+		t.Error("should stay in normal mode after yanking URL")
+	}
+}
+
+func TestApp_YankURL_OnFolder_DoesNothing(t *testing.T) {
+	store := &model.Store{
+		Folders: []model.Folder{
+			{ID: "f1", Name: "Test Folder", ParentID: nil},
+		},
+		Bookmarks: []model.Bookmark{},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+
+	// Press 'Y' on a folder - should do nothing
+	updated, cmd := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'Y'}})
+	app = updated.(tui.App)
+
+	// Should not return a command
+	if cmd != nil {
+		t.Error("should not return command when yanking URL from folder")
+	}
+}
+
+func TestApp_YankURL_EmptyList(t *testing.T) {
+	store := &model.Store{
+		Folders:   []model.Folder{},
+		Bookmarks: []model.Bookmark{},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+
+	// Press 'Y' on empty list - should do nothing (no crash)
+	updated, cmd := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'Y'}})
+	app = updated.(tui.App)
+
+	// Should not return a command
+	if cmd != nil {
+		t.Error("should not return command on empty list")
+	}
+}
+
+func TestApp_HelpOverlay_Toggle(t *testing.T) {
+	store := &model.Store{
+		Folders:   []model.Folder{},
+		Bookmarks: []model.Bookmark{},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+
+	// Initially not in help mode
+	if app.Mode() != tui.ModeNormal {
+		t.Error("expected to start in normal mode")
+	}
+
+	// Press '?' to open help overlay
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	app = updated.(tui.App)
+
+	// Should be in help mode
+	if app.Mode() != tui.ModeHelp {
+		t.Errorf("expected ModeHelp after '?', got %d", app.Mode())
+	}
+
+	// Press '?' again to close
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	app = updated.(tui.App)
+
+	// Should be back in normal mode
+	if app.Mode() != tui.ModeNormal {
+		t.Error("expected normal mode after pressing '?' again")
+	}
+}
+
+func TestApp_HelpOverlay_CloseWithEsc(t *testing.T) {
+	store := &model.Store{
+		Folders:   []model.Folder{},
+		Bookmarks: []model.Bookmark{},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+
+	// Open help overlay
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	app = updated.(tui.App)
+
+	// Press Esc to close
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	app = updated.(tui.App)
+
+	// Should be back in normal mode
+	if app.Mode() != tui.ModeNormal {
+		t.Error("expected normal mode after Esc")
+	}
+}
+
+func TestApp_HelpOverlay_CloseWithQ(t *testing.T) {
+	store := &model.Store{
+		Folders:   []model.Folder{},
+		Bookmarks: []model.Bookmark{},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+
+	// Open help overlay
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	app = updated.(tui.App)
+
+	// Press 'q' to close (should close help, not quit app)
+	updated, cmd := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	app = updated.(tui.App)
+
+	// Should be back in normal mode (not quit)
+	if app.Mode() != tui.ModeNormal {
+		t.Error("expected normal mode after 'q' in help mode")
+	}
+
+	// Should not have quit command
+	if cmd != nil {
+		t.Error("'q' in help mode should close help, not quit")
+	}
+}

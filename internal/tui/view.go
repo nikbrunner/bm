@@ -111,6 +111,10 @@ func (a App) renderModal() string {
 	case ModeSearch:
 		// Render full-screen fuzzy finder
 		return a.renderFuzzyFinder()
+
+	case ModeHelp:
+		// Render help overlay
+		return a.renderHelpOverlay()
 	}
 
 	modalContent := a.styles.Title.Render(title.String()) + content.String()
@@ -437,9 +441,69 @@ func (a App) renderHelpBar() string {
 	}
 	status.WriteString("[sort: " + sortLabels[a.sortMode] + "]")
 
-	help := "j/k: move  h/l: navigate  /: find  s: sort  a: add  e: edit  dd: cut  p: paste  q: quit"
+	help := "j/k: move  h/l: navigate  /: find  s: sort  a: add  e: edit  dd: cut  p: paste  ?: help  q: quit"
 
 	return a.styles.Help.Render(status.String() + "  " + help)
+}
+
+// renderHelpOverlay renders the help overlay.
+func (a App) renderHelpOverlay() string {
+	modalWidth := 60
+	if a.width < 70 {
+		modalWidth = a.width - 10
+	}
+
+	modalStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("#7D56F4")).
+		Padding(1, 2).
+		Width(modalWidth)
+
+	// Build help content
+	var content strings.Builder
+	content.WriteString(a.styles.Title.Render("Keyboard Shortcuts"))
+	content.WriteString("\n\n")
+
+	// Navigation
+	content.WriteString(a.styles.Tag.Render("Navigation"))
+	content.WriteString("\n")
+	content.WriteString("  j/k       Move down/up\n")
+	content.WriteString("  h/l       Navigate out/into folder\n")
+	content.WriteString("  gg        Jump to top\n")
+	content.WriteString("  G         Jump to bottom\n")
+	content.WriteString("\n")
+
+	// Actions
+	content.WriteString(a.styles.Tag.Render("Actions"))
+	content.WriteString("\n")
+	content.WriteString("  o/Enter   Open URL in browser\n")
+	content.WriteString("  Y         Yank URL to clipboard\n")
+	content.WriteString("  /         Global search\n")
+	content.WriteString("  s         Cycle sort mode\n")
+	content.WriteString("\n")
+
+	// CRUD
+	content.WriteString(a.styles.Tag.Render("Edit"))
+	content.WriteString("\n")
+	content.WriteString("  a         Add bookmark\n")
+	content.WriteString("  A         Add folder\n")
+	content.WriteString("  e         Edit selected\n")
+	content.WriteString("  t         Edit tags\n")
+	content.WriteString("  yy        Yank (copy)\n")
+	content.WriteString("  dd        Cut (delete)\n")
+	content.WriteString("  p/P       Paste after/before\n")
+	content.WriteString("\n")
+
+	// Close
+	content.WriteString(a.styles.Help.Render("Press ? or q or Esc to close"))
+
+	return lipgloss.Place(
+		a.width,
+		a.height,
+		lipgloss.Center,
+		lipgloss.Center,
+		modalStyle.Render(content.String()),
+	)
 }
 
 func (a App) getItemsForFolder(folderID *string) []Item {

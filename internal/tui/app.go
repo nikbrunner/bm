@@ -1,9 +1,13 @@
 package tui
 
 import (
+	"os/exec"
+	"runtime"
 	"sort"
 	"strings"
+	"time"
 
+	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -23,6 +27,7 @@ const (
 	ModeEditTags
 	ModeConfirmDelete
 	ModeSearch
+	ModeHelp
 )
 
 // SortMode represents the current sort mode.
@@ -525,6 +530,19 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			a.updateFuzzyMatches()
 			return a, a.searchInput.Focus()
+
+		case key.Matches(msg, a.keys.Open):
+			// Open bookmark URL in browser
+			return a.openBookmark()
+
+		case key.Matches(msg, a.keys.YankURL):
+			// Yank URL to clipboard
+			return a.yankURLToClipboard()
+
+		case key.Matches(msg, a.keys.Help):
+			// Toggle help overlay
+			a.mode = ModeHelp
+			return a, nil
 		}
 	}
 
@@ -533,6 +551,24 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // updateModal handles key events when in a modal mode.
 func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Handle help overlay
+	if a.mode == ModeHelp {
+		switch {
+		case msg.Type == tea.KeyEsc:
+			a.mode = ModeNormal
+			return a, nil
+		case key.Matches(msg, a.keys.Quit):
+			// 'q' closes help, doesn't quit
+			a.mode = ModeNormal
+			return a, nil
+		case key.Matches(msg, a.keys.Help):
+			// '?' toggles help off
+			a.mode = ModeNormal
+			return a, nil
+		}
+		return a, nil
+	}
+
 	// Handle confirm delete modal separately (simple yes/no)
 	if a.mode == ModeConfirmDelete {
 		switch msg.Type {
@@ -896,6 +932,66 @@ func (a *App) pasteItem(before bool) {
 	}
 
 	a.refreshItems()
+}
+
+// openBookmark opens the selected bookmark URL in default browser.
+func (a App) openBookmark() (tea.Model, tea.Cmd) {
+	if len(a.items) == 0 || a.cursor >= len(a.items) {
+		return a, nil
+	}
+
+	item := a.items[a.cursor]
+	if item.IsFolder() {
+		return a, nil
+	}
+
+	// Update visitedAt timestamp
+	bookmark := a.store.GetBookmarkByID(item.Bookmark.ID)
+	if bookmark != nil {
+		now := time.Now()
+		bookmark.VisitedAt = &now
+		a.refreshItems()
+	}
+
+	// Open URL in default browser
+	url := item.Bookmark.URL
+	cmd := func() tea.Msg {
+		var openCmd *exec.Cmd
+		switch runtime.GOOS {
+		case "darwin":
+			openCmd = exec.Command("open", url)
+		case "linux":
+			openCmd = exec.Command("xdg-open", url)
+		case "windows":
+			openCmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+		}
+		if openCmd != nil {
+			_ = openCmd.Start()
+		}
+		return nil
+	}
+
+	return a, cmd
+}
+
+// yankURLToClipboard copies the selected bookmark URL to system clipboard.
+func (a App) yankURLToClipboard() (tea.Model, tea.Cmd) {
+	if len(a.items) == 0 || a.cursor >= len(a.items) {
+		return a, nil
+	}
+
+	item := a.items[a.cursor]
+	if item.IsFolder() {
+		return a, nil
+	}
+
+	url := item.Bookmark.URL
+	cmd := func() tea.Msg {
+		_ = clipboard.WriteAll(url)
+		return nil
+	}
+
+	return a, cmd
 }
 
 // View implements tea.Model.

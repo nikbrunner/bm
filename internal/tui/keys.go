@@ -20,6 +20,9 @@ type KeyMap struct {
 	EditTags    key.Binding
 	Sort        key.Binding
 	Search      key.Binding
+	Open        key.Binding
+	YankURL     key.Binding
+	Help        key.Binding
 	Quit        key.Binding
 }
 
@@ -89,6 +92,18 @@ func DefaultKeyMap() KeyMap {
 		Search: key.NewBinding(
 			key.WithKeys("/"),
 			key.WithHelp("/", "filter"),
+		),
+		Open: key.NewBinding(
+			key.WithKeys("o"),
+			key.WithHelp("o", "open URL"),
+		),
+		YankURL: key.NewBinding(
+			key.WithKeys("Y"),
+			key.WithHelp("Y", "yank URL"),
+		),
+		Help: key.NewBinding(
+			key.WithKeys("?"),
+			key.WithHelp("?", "help"),
 		),
 		Quit: key.NewBinding(
 			key.WithKeys("q", "ctrl+c"),
