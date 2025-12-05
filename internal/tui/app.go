@@ -520,11 +520,6 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, a.keys.ToggleConfirm):
 			// Toggle delete confirmation
 			a.confirmDelete = !a.confirmDelete
-			if a.confirmDelete {
-				a.setStatus("Confirmations ON")
-			} else {
-				a.setStatus("Confirmations OFF")
-			}
 
 		case key.Matches(msg, a.keys.Search):
 			// Open fuzzy finder mode with GLOBAL search
