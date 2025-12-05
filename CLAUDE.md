@@ -27,8 +27,11 @@ go fmt ./...
 # Run the app
 ./bm                          # Full TUI
 ./bm <query>                  # Quick search
-./bm import bookmarks.html    # Import
-./bm export                   # Export
+./bm help                     # Show help
+./bm init                     # Create config with sample data
+./bm reset                    # Clear all data (requires confirmation)
+./bm import bookmarks.html    # Import from browser HTML
+./bm export                   # Export to browser HTML
 ```
 
 ## Architecture
@@ -52,14 +55,16 @@ internal/
 **Store Pattern**: `model.Store` holds flat slices of `Folders` and `Bookmarks`. Parent/folder relationships are via `ParentID`/`FolderID` pointer fields (`nil` = root level).
 
 **TUI App Structure**: `tui.App` is the main bubbletea model with:
-- Modal modes: `ModeNormal`, `ModeAddBookmark`, `ModeEditFolder`, `ModeSearch`, `ModeHelp`, etc.
-- Vim-style keys: `gg` (top), `y` (yank), `d` (delete), `x` (cut) - single key actions except `gg`
+- Modal modes: `ModeNormal`, `ModeAddBookmark`, `ModeEditFolder`, `ModeSearch`, `ModeHelp`, `ModeConfirmDelete`
 - Fuzzy search over all items (not just current folder) via `allItems`/`fuzzyMatches`
 - View renders 3-pane Miller columns (parent | current | preview)
+- `confirmDelete` flag (toggled with `c`) controls whether delete/cut shows confirmation
 
 **Item Union Type**: `tui.Item` wraps either a `Folder` or `Bookmark` for unified list handling.
 
-**CLI Modes**: Based on first arg: `import`/`export` are subcommands, anything else is a fuzzy search query, no args opens full TUI.
+**CLI Modes**: Subcommands are `help`, `init`, `reset`, `import`, `export`. Anything else is treated as a fuzzy search query. No args opens the full TUI.
+
+**Keybindings**: Single-key actions for editing (`y` yank, `d` delete, `x` cut), `gg` for top. `c` toggles delete confirmations (on by default). `?` shows help overlay. `l`/`Enter` opens bookmarks or enters folders.
 
 ### Dependencies
 
