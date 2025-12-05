@@ -4,7 +4,7 @@
 - **Phase 1**: Foundation (project setup, data model, JSON storage) ✅
 - **Phase 2**: Core TUI (Miller columns, vim navigation) ✅
 - **Phase 3**: CRUD Operations (add, edit, delete, yank, paste) ✅
-- **Phase 4**: Search & Sort
+- **Phase 4**: Search & Sort ✅
 - **Phase 5**: Actions & Polish
 - **Phase 6**: CLI & Export
 - **Phase 7**: Final Polish
@@ -79,6 +79,23 @@
 | 21 | Persist changes on exit | auto | :white_check_mark: |
 
 **Tests:** 38 passing (TDD approach)
+
+### Phase 4: Search & Sort (COMPLETE)
+
+| # | Task | Key | Status |
+|---|------|-----|--------|
+| 22 | Cycle sort modes | `s` | :white_check_mark: |
+| 23 | Manual sort (default) | - | :white_check_mark: |
+| 24 | Alphabetical sort | `s` | :white_check_mark: |
+| 25 | Sort by created date | `s` | :white_check_mark: |
+| 26 | Sort by visited date | `s` | :white_check_mark: |
+| 27 | Filter current folder | `/` | :white_check_mark: |
+| 28 | Live filter while typing | auto | :white_check_mark: |
+| 29 | Case-insensitive filter | auto | :white_check_mark: |
+| 30 | Sort indicator in UI | auto | :white_check_mark: |
+| 31 | Filter indicator in UI | auto | :white_check_mark: |
+
+**Tests:** 49 passing (TDD approach)
 
 ---
 

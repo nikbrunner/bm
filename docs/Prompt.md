@@ -211,10 +211,10 @@ Export bookmarks to standard Netscape bookmark HTML format (compatible with all 
 - [x] Delete folder confirmation prompt
 - [x] Persist changes on exit
 
-### Phase 4: Search & Sort
-- [ ] `/` - Fuzzy filter current folder
-- [ ] `s` - Cycle sort modes
-- [ ] Sort indicator in UI
+### Phase 4: Search & Sort ✅
+- [x] `/` - Fuzzy filter current folder
+- [x] `s` - Cycle sort modes
+- [x] Sort indicator in UI
 
 ### Phase 5: Actions & Polish
 - [ ] `o`/`Enter` - Open URL in default browser

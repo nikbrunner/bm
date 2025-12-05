@@ -18,6 +18,8 @@ type KeyMap struct {
 	AddFolder   key.Binding
 	Edit        key.Binding
 	EditTags    key.Binding
+	Sort        key.Binding
+	Search      key.Binding
 	Quit        key.Binding
 }
 
@@ -79,6 +81,14 @@ func DefaultKeyMap() KeyMap {
 		EditTags: key.NewBinding(
 			key.WithKeys("t"),
 			key.WithHelp("t", "edit tags"),
+		),
+		Sort: key.NewBinding(
+			key.WithKeys("s"),
+			key.WithHelp("s", "cycle sort"),
+		),
+		Search: key.NewBinding(
+			key.WithKeys("/"),
+			key.WithHelp("/", "filter"),
 		),
 		Quit: key.NewBinding(
 			key.WithKeys("q", "ctrl+c"),

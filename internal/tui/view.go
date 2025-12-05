@@ -107,6 +107,12 @@ func (a App) renderModal() string {
 		title.WriteString("Delete Folder?\n\n")
 		content.WriteString("Are you sure you want to delete " + folderName + "?\n\n")
 		content.WriteString(a.styles.Help.Render("Enter: confirm • Esc: cancel"))
+
+	case ModeSearch:
+		title.WriteString("Filter\n\n")
+		content.WriteString(a.searchInput.View())
+		content.WriteString("\n\n")
+		content.WriteString(a.styles.Help.Render("Enter: apply • Esc: cancel"))
 	}
 
 	modalContent := a.styles.Title.Render(title.String()) + content.String()
@@ -256,8 +262,26 @@ func (a App) renderItem(item Item, selected bool, maxWidth int) string {
 }
 
 func (a App) renderHelpBar() string {
-	help := "j/k: move  h/l: navigate  a: add  A: folder  e: edit  t: tags  yy: yank  dd: cut  p: paste  q: quit"
-	return a.styles.Help.Render(help)
+	// Build status indicators
+	var status strings.Builder
+
+	// Sort mode indicator
+	sortLabels := map[SortMode]string{
+		SortManual:  "manual",
+		SortAlpha:   "A-Z",
+		SortCreated: "created",
+		SortVisited: "visited",
+	}
+	status.WriteString("[sort: " + sortLabels[a.sortMode] + "]")
+
+	// Filter indicator
+	if a.filterQuery != "" {
+		status.WriteString(" [filter: \"" + a.filterQuery + "\"]")
+	}
+
+	help := "j/k: move  h/l: navigate  /: filter  s: sort  a: add  e: edit  dd: cut  p: paste  q: quit"
+
+	return a.styles.Help.Render(status.String() + "  " + help)
 }
 
 func (a App) getItemsForFolder(folderID *string) []Item {

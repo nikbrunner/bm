@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -20,6 +21,17 @@ const (
 	ModeEditBookmark
 	ModeEditTags
 	ModeConfirmDelete
+	ModeSearch
+)
+
+// SortMode represents the current sort mode.
+type SortMode int
+
+const (
+	SortManual  SortMode = iota // preserve insertion order
+	SortAlpha                   // alphabetical
+	SortCreated                 // by creation date (newest first)
+	SortVisited                 // by visit date (most recent first)
 )
 
 // App is the main bubbletea model for the bookmark manager.
@@ -33,6 +45,13 @@ type App struct {
 	folderStack     []string // breadcrumb trail of folder IDs
 	cursor          int      // selected item index
 	items           []Item   // current list items
+
+	// Sort mode
+	sortMode SortMode
+
+	// Filter/search
+	filterQuery string
+	searchInput textinput.Model
 
 	// For gg command
 	lastKeyWasG bool
@@ -93,6 +112,11 @@ func NewApp(params AppParams) App {
 	tagsInput.CharLimit = 200
 	tagsInput.Width = 40
 
+	searchInput := textinput.New()
+	searchInput.Placeholder = "Filter..."
+	searchInput.CharLimit = 100
+	searchInput.Width = 40
+
 	app := App{
 		store:           params.Store,
 		keys:            keys,
@@ -104,6 +128,7 @@ func NewApp(params AppParams) App {
 		titleInput:      titleInput,
 		urlInput:        urlInput,
 		tagsInput:       tagsInput,
+		searchInput:     searchInput,
 		width:           80,
 		height:          24,
 	}
@@ -112,12 +137,73 @@ func NewApp(params AppParams) App {
 	return app
 }
 
-// refreshItems rebuilds the items slice based on current folder.
+// refreshItems rebuilds the items slice based on current folder, sort mode, and filter.
 func (a *App) refreshItems() {
 	a.items = []Item{}
 
-	// Add folders first (sorted before bookmarks)
+	// Get folders and bookmarks
 	folders := a.store.GetFoldersInFolder(a.currentFolderID)
+	bookmarks := a.store.GetBookmarksInFolder(a.currentFolderID)
+
+	// Apply filter if set
+	if a.filterQuery != "" {
+		query := strings.ToLower(a.filterQuery)
+
+		// Filter folders
+		filteredFolders := make([]model.Folder, 0)
+		for _, f := range folders {
+			if strings.Contains(strings.ToLower(f.Name), query) {
+				filteredFolders = append(filteredFolders, f)
+			}
+		}
+		folders = filteredFolders
+
+		// Filter bookmarks
+		filteredBookmarks := make([]model.Bookmark, 0)
+		for _, b := range bookmarks {
+			if strings.Contains(strings.ToLower(b.Title), query) {
+				filteredBookmarks = append(filteredBookmarks, b)
+			}
+		}
+		bookmarks = filteredBookmarks
+	}
+
+	// Apply sorting based on current mode
+	switch a.sortMode {
+	case SortAlpha:
+		// Sort folders alphabetically
+		sort.Slice(folders, func(i, j int) bool {
+			return strings.ToLower(folders[i].Name) < strings.ToLower(folders[j].Name)
+		})
+		// Sort bookmarks alphabetically
+		sort.Slice(bookmarks, func(i, j int) bool {
+			return strings.ToLower(bookmarks[i].Title) < strings.ToLower(bookmarks[j].Title)
+		})
+
+	case SortCreated:
+		// Sort bookmarks by created date (newest first)
+		sort.Slice(bookmarks, func(i, j int) bool {
+			return bookmarks[i].CreatedAt.After(bookmarks[j].CreatedAt)
+		})
+
+	case SortVisited:
+		// Sort bookmarks by visit date (most recent first, never visited at end)
+		sort.Slice(bookmarks, func(i, j int) bool {
+			if bookmarks[i].VisitedAt == nil && bookmarks[j].VisitedAt == nil {
+				return false // maintain order
+			}
+			if bookmarks[i].VisitedAt == nil {
+				return false // nil goes to end
+			}
+			if bookmarks[j].VisitedAt == nil {
+				return true // nil goes to end
+			}
+			return bookmarks[i].VisitedAt.After(*bookmarks[j].VisitedAt)
+		})
+	}
+	// SortManual: keep insertion order (no sorting)
+
+	// Add folders first (folders always before bookmarks)
 	for i := range folders {
 		a.items = append(a.items, Item{
 			Kind:   ItemFolder,
@@ -126,7 +212,6 @@ func (a *App) refreshItems() {
 	}
 
 	// Add bookmarks
-	bookmarks := a.store.GetBookmarksInFolder(a.currentFolderID)
 	for i := range bookmarks {
 		a.items = append(a.items, Item{
 			Kind:     ItemBookmark,
@@ -158,6 +243,16 @@ func (a App) YankedItem() *Item {
 // Mode returns the current UI mode.
 func (a App) Mode() Mode {
 	return a.mode
+}
+
+// SortMode returns the current sort mode.
+func (a App) SortMode() SortMode {
+	return a.sortMode
+}
+
+// FilterQuery returns the current filter query.
+func (a App) FilterQuery() string {
+	return a.filterQuery
 }
 
 // Init implements tea.Model.
@@ -342,6 +437,19 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.tagsInput.SetValue(strings.Join(item.Bookmark.Tags, ", "))
 			a.tagsInput.Focus()
 			return a, a.tagsInput.Focus()
+
+		case key.Matches(msg, a.keys.Sort):
+			// Cycle through sort modes
+			a.sortMode = (a.sortMode + 1) % 4
+			a.refreshItems()
+
+		case key.Matches(msg, a.keys.Search):
+			// Open search mode
+			a.mode = ModeSearch
+			a.searchInput.Reset()
+			a.searchInput.SetValue(a.filterQuery) // Pre-fill with current filter
+			a.searchInput.Focus()
+			return a, a.searchInput.Focus()
 		}
 	}
 
@@ -364,6 +472,33 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 		return a, nil
+	}
+
+	// Handle search mode
+	if a.mode == ModeSearch {
+		switch msg.Type {
+		case tea.KeyEsc:
+			// Cancel search, clear filter
+			a.filterQuery = ""
+			a.mode = ModeNormal
+			a.cursor = 0
+			a.refreshItems()
+			return a, nil
+		case tea.KeyEnter:
+			// Confirm search, apply filter
+			a.filterQuery = a.searchInput.Value()
+			a.mode = ModeNormal
+			a.cursor = 0
+			a.refreshItems()
+			return a, nil
+		}
+		// Update search input and live-filter
+		var cmd tea.Cmd
+		a.searchInput, cmd = a.searchInput.Update(msg)
+		// Apply live filtering as user types
+		a.filterQuery = a.searchInput.Value()
+		a.refreshItems()
+		return a, cmd
 	}
 
 	switch msg.Type {

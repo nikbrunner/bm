@@ -2,6 +2,7 @@ package tui_test
 
 import (
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/nikbrunner/bm/internal/model"
@@ -1132,5 +1133,404 @@ func TestApp_DeleteBookmark_NoConfirmation(t *testing.T) {
 	// Bookmark should be deleted
 	if len(app.Items()) != 0 {
 		t.Error("bookmark should be deleted immediately")
+	}
+}
+
+// === Phase 4 Tests: Sort Mode ===
+
+func TestApp_SortMode_DefaultIsManual(t *testing.T) {
+	store := &model.Store{
+		Folders:   []model.Folder{},
+		Bookmarks: []model.Bookmark{},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+
+	// Default sort mode should be manual (preserves insertion order)
+	if app.SortMode() != tui.SortManual {
+		t.Errorf("expected default sort mode to be SortManual, got %d", app.SortMode())
+	}
+}
+
+func TestApp_SortMode_Cycle(t *testing.T) {
+	store := &model.Store{
+		Folders:   []model.Folder{},
+		Bookmarks: []model.Bookmark{},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+
+	// Start at manual
+	if app.SortMode() != tui.SortManual {
+		t.Fatal("expected to start at SortManual")
+	}
+
+	// Press 's' to cycle to alpha
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	app = updated.(tui.App)
+	if app.SortMode() != tui.SortAlpha {
+		t.Errorf("expected SortAlpha after first 's', got %d", app.SortMode())
+	}
+
+	// Press 's' to cycle to date created
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	app = updated.(tui.App)
+	if app.SortMode() != tui.SortCreated {
+		t.Errorf("expected SortCreated after second 's', got %d", app.SortMode())
+	}
+
+	// Press 's' to cycle to date visited
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	app = updated.(tui.App)
+	if app.SortMode() != tui.SortVisited {
+		t.Errorf("expected SortVisited after third 's', got %d", app.SortMode())
+	}
+
+	// Press 's' to cycle back to manual
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	app = updated.(tui.App)
+	if app.SortMode() != tui.SortManual {
+		t.Errorf("expected SortManual after fourth 's', got %d", app.SortMode())
+	}
+}
+
+func TestApp_SortMode_Alpha_SortsFoldersAndBookmarks(t *testing.T) {
+	store := &model.Store{
+		Folders: []model.Folder{
+			{ID: "f1", Name: "Zebra", ParentID: nil},
+			{ID: "f2", Name: "Alpha", ParentID: nil},
+			{ID: "f3", Name: "Middle", ParentID: nil},
+		},
+		Bookmarks: []model.Bookmark{
+			{ID: "b1", Title: "Zoo", URL: "https://zoo.com", FolderID: nil},
+			{ID: "b2", Title: "Ant", URL: "https://ant.com", FolderID: nil},
+		},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+
+	// Cycle to alpha sort
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	app = updated.(tui.App)
+
+	items := app.Items()
+
+	// Folders should be sorted alphabetically (still before bookmarks)
+	if items[0].Folder.Name != "Alpha" {
+		t.Errorf("expected first folder to be 'Alpha', got %q", items[0].Folder.Name)
+	}
+	if items[1].Folder.Name != "Middle" {
+		t.Errorf("expected second folder to be 'Middle', got %q", items[1].Folder.Name)
+	}
+	if items[2].Folder.Name != "Zebra" {
+		t.Errorf("expected third folder to be 'Zebra', got %q", items[2].Folder.Name)
+	}
+
+	// Bookmarks should be sorted alphabetically
+	if items[3].Bookmark.Title != "Ant" {
+		t.Errorf("expected first bookmark to be 'Ant', got %q", items[3].Bookmark.Title)
+	}
+	if items[4].Bookmark.Title != "Zoo" {
+		t.Errorf("expected second bookmark to be 'Zoo', got %q", items[4].Bookmark.Title)
+	}
+}
+
+func TestApp_SortMode_DateCreated(t *testing.T) {
+	now := time.Now()
+	store := &model.Store{
+		Folders: []model.Folder{
+			{ID: "f1", Name: "Folder 1", ParentID: nil},
+		},
+		Bookmarks: []model.Bookmark{
+			{ID: "b1", Title: "Old", URL: "https://old.com", FolderID: nil, CreatedAt: now.Add(-48 * time.Hour)},
+			{ID: "b2", Title: "New", URL: "https://new.com", FolderID: nil, CreatedAt: now},
+			{ID: "b3", Title: "Middle", URL: "https://mid.com", FolderID: nil, CreatedAt: now.Add(-24 * time.Hour)},
+		},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+
+	// Cycle to date created sort (manual -> alpha -> created)
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	app = updated.(tui.App)
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	app = updated.(tui.App)
+
+	items := app.Items()
+
+	// First item is folder (folders first)
+	if !items[0].IsFolder() {
+		t.Error("expected folder first")
+	}
+
+	// Bookmarks should be sorted by created date (newest first)
+	if items[1].Bookmark.Title != "New" {
+		t.Errorf("expected newest bookmark first, got %q", items[1].Bookmark.Title)
+	}
+	if items[2].Bookmark.Title != "Middle" {
+		t.Errorf("expected middle bookmark second, got %q", items[2].Bookmark.Title)
+	}
+	if items[3].Bookmark.Title != "Old" {
+		t.Errorf("expected oldest bookmark last, got %q", items[3].Bookmark.Title)
+	}
+}
+
+func TestApp_SortMode_DateVisited(t *testing.T) {
+	now := time.Now()
+	oldTime := now.Add(-48 * time.Hour)
+	newTime := now
+
+	store := &model.Store{
+		Folders: []model.Folder{},
+		Bookmarks: []model.Bookmark{
+			{ID: "b1", Title: "Never Visited", URL: "https://never.com", FolderID: nil, VisitedAt: nil},
+			{ID: "b2", Title: "Old Visit", URL: "https://old.com", FolderID: nil, VisitedAt: &oldTime},
+			{ID: "b3", Title: "Recent Visit", URL: "https://new.com", FolderID: nil, VisitedAt: &newTime},
+		},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+
+	// Cycle to date visited sort (manual -> alpha -> created -> visited)
+	for i := 0; i < 3; i++ {
+		updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+		app = updated.(tui.App)
+	}
+
+	items := app.Items()
+
+	// Bookmarks with visits should be sorted by visit date (most recent first)
+	// Bookmarks without visits should be at the end
+	if items[0].Bookmark.Title != "Recent Visit" {
+		t.Errorf("expected most recently visited first, got %q", items[0].Bookmark.Title)
+	}
+	if items[1].Bookmark.Title != "Old Visit" {
+		t.Errorf("expected old visit second, got %q", items[1].Bookmark.Title)
+	}
+	if items[2].Bookmark.Title != "Never Visited" {
+		t.Errorf("expected never visited last, got %q", items[2].Bookmark.Title)
+	}
+}
+
+// === Phase 4 Tests: Search/Filter ===
+
+func TestApp_Search_OpenModal(t *testing.T) {
+	store := &model.Store{
+		Folders:   []model.Folder{},
+		Bookmarks: []model.Bookmark{},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+
+	// Press '/' to open search mode
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	app = updated.(tui.App)
+
+	// Should be in search mode
+	if app.Mode() != tui.ModeSearch {
+		t.Errorf("expected ModeSearch after '/', got %d", app.Mode())
+	}
+}
+
+func TestApp_Search_Cancel(t *testing.T) {
+	store := &model.Store{
+		Folders: []model.Folder{
+			{ID: "f1", Name: "Dev", ParentID: nil},
+			{ID: "f2", Name: "Design", ParentID: nil},
+		},
+		Bookmarks: []model.Bookmark{},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+
+	// Open search
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	app = updated.(tui.App)
+
+	// Type something to filter
+	for _, r := range "Dev" {
+		updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		app = updated.(tui.App)
+	}
+
+	// Press Esc to cancel
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	app = updated.(tui.App)
+
+	// Should be back in normal mode
+	if app.Mode() != tui.ModeNormal {
+		t.Error("expected normal mode after Esc")
+	}
+
+	// Filter should be cleared, all items visible
+	if len(app.Items()) != 2 {
+		t.Errorf("expected 2 items after cancel, got %d", len(app.Items()))
+	}
+
+	// Filter query should be empty
+	if app.FilterQuery() != "" {
+		t.Errorf("expected empty filter query after cancel, got %q", app.FilterQuery())
+	}
+}
+
+func TestApp_Search_FiltersItems(t *testing.T) {
+	store := &model.Store{
+		Folders: []model.Folder{
+			{ID: "f1", Name: "Development", ParentID: nil},
+			{ID: "f2", Name: "Design", ParentID: nil},
+			{ID: "f3", Name: "Reading", ParentID: nil},
+		},
+		Bookmarks: []model.Bookmark{
+			{ID: "b1", Title: "DevOps Guide", URL: "https://devops.com", FolderID: nil},
+			{ID: "b2", Title: "Reading List", URL: "https://reading.com", FolderID: nil},
+		},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+
+	// Open search and type "Dev"
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	app = updated.(tui.App)
+
+	for _, r := range "Dev" {
+		updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		app = updated.(tui.App)
+	}
+
+	// Should filter to items containing "Dev"
+	items := app.Items()
+	if len(items) != 2 {
+		t.Fatalf("expected 2 items matching 'Dev', got %d", len(items))
+	}
+
+	// Check that we got the right items
+	names := []string{}
+	for _, item := range items {
+		names = append(names, item.Title())
+	}
+	// Should have "Development" folder and "DevOps Guide" bookmark
+	found := map[string]bool{"Development": false, "DevOps Guide": false}
+	for _, name := range names {
+		if _, ok := found[name]; ok {
+			found[name] = true
+		}
+	}
+	for name, wasFound := range found {
+		if !wasFound {
+			t.Errorf("expected to find %q in filtered results", name)
+		}
+	}
+}
+
+func TestApp_Search_CaseInsensitive(t *testing.T) {
+	store := &model.Store{
+		Folders: []model.Folder{
+			{ID: "f1", Name: "Development", ParentID: nil},
+		},
+		Bookmarks: []model.Bookmark{},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+
+	// Open search and type lowercase "dev"
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	app = updated.(tui.App)
+
+	for _, r := range "dev" {
+		updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		app = updated.(tui.App)
+	}
+
+	// Should find "Development" (case insensitive)
+	if len(app.Items()) != 1 {
+		t.Errorf("expected 1 item for case-insensitive search, got %d", len(app.Items()))
+	}
+}
+
+func TestApp_Search_Enter_ConfirmsFilter(t *testing.T) {
+	store := &model.Store{
+		Folders: []model.Folder{
+			{ID: "f1", Name: "Development", ParentID: nil},
+			{ID: "f2", Name: "Design", ParentID: nil},
+		},
+		Bookmarks: []model.Bookmark{},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+
+	// Open search and type "Dev"
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	app = updated.(tui.App)
+
+	for _, r := range "Dev" {
+		updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		app = updated.(tui.App)
+	}
+
+	// Press Enter to confirm filter
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	app = updated.(tui.App)
+
+	// Should be back in normal mode
+	if app.Mode() != tui.ModeNormal {
+		t.Error("expected normal mode after Enter")
+	}
+
+	// Filter should still be active
+	if len(app.Items()) != 1 {
+		t.Errorf("expected 1 filtered item after Enter, got %d", len(app.Items()))
+	}
+
+	// Filter query should be preserved
+	if app.FilterQuery() != "Dev" {
+		t.Errorf("expected filter query 'Dev', got %q", app.FilterQuery())
+	}
+}
+
+func TestApp_Search_ClearFilter(t *testing.T) {
+	store := &model.Store{
+		Folders: []model.Folder{
+			{ID: "f1", Name: "Development", ParentID: nil},
+			{ID: "f2", Name: "Design", ParentID: nil},
+		},
+		Bookmarks: []model.Bookmark{},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+
+	// Set up a filter
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	app = updated.(tui.App)
+	for _, r := range "Dev" {
+		updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		app = updated.(tui.App)
+	}
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	app = updated.(tui.App)
+
+	// Verify filter is active
+	if len(app.Items()) != 1 {
+		t.Fatal("filter should be active")
+	}
+
+	// Press '/' again with empty query and Enter to clear filter
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	app = updated.(tui.App)
+
+	// Clear with Ctrl+U
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyCtrlU})
+	app = updated.(tui.App)
+
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	app = updated.(tui.App)
+
+	// Should show all items
+	if len(app.Items()) != 2 {
+		t.Errorf("expected 2 items after clearing filter, got %d", len(app.Items()))
+	}
+
+	// Filter query should be empty
+	if app.FilterQuery() != "" {
+		t.Errorf("expected empty filter query, got %q", app.FilterQuery())
 	}
 }
