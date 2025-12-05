@@ -265,32 +265,23 @@ func (a App) renderItem(item Item, selected bool, maxWidth int) string {
 
 // renderFuzzyFinder renders the fuzzy finder overlay.
 func (a App) renderFuzzyFinder() string {
-	// Use most of the screen
-	modalWidth := a.width - 10
+	// Overlay size: 65% width, 35% height
+	modalWidth := a.width * 65 / 100
+	modalHeight := a.height * 35 / 100
+
+	// Minimum sizes
 	if modalWidth < 60 {
 		modalWidth = 60
 	}
-	if modalWidth > 120 {
-		modalWidth = 120
+	if modalHeight < 10 {
+		modalHeight = 10
 	}
 
-	modalHeight := a.height - 6
-	if modalHeight < 15 {
-		modalHeight = 15
-	}
-
-	// Content width (accounting for modal padding and border)
-	contentWidth := modalWidth - 6
-
-	// Split content between results and preview
-	resultsWidth := contentWidth * 2 / 3
-	previewWidth := contentWidth - resultsWidth - 2
-
-	// Calculate how many results we can show
-	listHeight := modalHeight - 8 // Account for title, input, help, padding
-	if listHeight < 5 {
-		listHeight = 5
-	}
+	// Split width: 25% list, 75% preview
+	contentWidth := modalWidth - 8
+	listWidth := contentWidth * 25 / 100
+	previewWidth := contentWidth * 75 / 100
+	listHeight := modalHeight - 6 // Account for header, input, help
 
 	// Build results list
 	var results strings.Builder
@@ -302,7 +293,7 @@ func (a App) renderFuzzyFinder() string {
 				break
 			}
 			isSelected := i == a.fuzzyCursor
-			line := a.renderFuzzyItem(match, isSelected, resultsWidth-4)
+			line := a.renderFuzzyItem(match, isSelected, listWidth-2)
 			results.WriteString(line + "\n")
 		}
 	}
@@ -316,38 +307,37 @@ func (a App) renderFuzzyFinder() string {
 			preview.WriteString("\n\n")
 			folderID := selectedItem.Folder.ID
 			children := a.getItemsForFolder(&folderID)
-			preview.WriteString(fmt.Sprintf("%d items", len(children)))
+			preview.WriteString(a.styles.Empty.Render(fmt.Sprintf("%d items", len(children))))
 		} else {
 			b := selectedItem.Bookmark
-			preview.WriteString(b.Title)
+			preview.WriteString(a.styles.Title.Render(b.Title))
 			preview.WriteString("\n\n")
 			// URL (truncate if needed)
 			url := b.URL
 			if len(url) > previewWidth-2 {
 				url = url[:previewWidth-5] + "..."
 			}
-			preview.WriteString(url)
+			preview.WriteString(a.styles.URL.Render(url))
 			if len(b.Tags) > 0 {
 				preview.WriteString("\n\n")
 				tags := make([]string, len(b.Tags))
 				for i, tag := range b.Tags {
 					tags[i] = "#" + tag
 				}
-				preview.WriteString(strings.Join(tags, " "))
+				preview.WriteString(a.styles.Tag.Render(strings.Join(tags, " ")))
 			}
 		}
 	}
 
-	// Simple box styles for the panes
+	// Style for results list
 	resultsStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("#7D56F4")).
-		Width(resultsWidth).
+		Width(listWidth).
 		Height(listHeight)
 
+	// Style for preview
 	previewStyle := lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("#666")).
+		BorderForeground(lipgloss.Color("#444")).
 		Width(previewWidth).
 		Height(listHeight).
 		Padding(0, 1)
@@ -360,18 +350,24 @@ func (a App) renderFuzzyFinder() string {
 
 	// Build the modal
 	modalStyle := lipgloss.NewStyle().
-		Border(lipgloss.DoubleBorder()).
+		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("#7D56F4")).
 		Padding(1, 2)
 
+	// Result count
+	countStr := fmt.Sprintf("%d results", len(a.fuzzyMatches))
+	if len(a.fuzzyMatches) == 1 {
+		countStr = "1 result"
+	}
+
 	content := lipgloss.JoinVertical(lipgloss.Left,
-		a.styles.Title.Render("Find"),
+		a.styles.Title.Render("Find")+"  "+a.styles.Empty.Render(countStr),
 		"",
-		"> "+a.searchInput.View(),
+		"> "+a.searchInput.Value()+"█",
 		"",
 		panes,
 		"",
-		a.styles.Help.Render("↑/k ↓/j: navigate • Enter: select • Esc: cancel"),
+		a.styles.Help.Render("j/k: move • Enter: select • Esc: cancel"),
 	)
 
 	return lipgloss.Place(
