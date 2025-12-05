@@ -21,6 +21,9 @@ import (
 func main() {
 	if len(os.Args) >= 2 {
 		switch os.Args[1] {
+		case "help", "--help", "-h":
+			printHelp()
+			return
 		case "import":
 			if len(os.Args) < 3 {
 				fmt.Fprintf(os.Stderr, "Usage: bm import <file.html>\n")
@@ -46,6 +49,49 @@ func main() {
 
 	// No args - run full TUI
 	runTUI()
+}
+
+func printHelp() {
+	help := `bm - vim-style bookmark manager
+
+Usage:
+  bm                    Open interactive TUI
+  bm <query>            Quick search → select → open
+  bm import <file>      Import bookmarks from HTML
+  bm export [path]      Export bookmarks to HTML
+  bm help               Show this help
+
+TUI Keybindings:
+  Navigation:
+    j/k         Move down/up
+    h/l         Navigate back/forward
+    gg/G        Jump to top/bottom
+
+  Actions:
+    l/Enter     Open bookmark / enter folder
+    o           Open bookmark in browser
+    Y           Copy URL to clipboard
+    /           Global fuzzy search
+    s           Cycle sort mode
+    c           Toggle delete confirmations
+
+  Editing:
+    a/A         Add bookmark/folder
+    e           Edit selected item
+    t           Edit tags (bookmarks only)
+    y           Yank (copy)
+    d           Delete
+    x           Cut (delete + buffer)
+    p/P         Paste after/before
+
+  Other:
+    ?           Show help overlay
+    q           Quit
+
+Data Storage:
+  ~/.config/bm/bookmarks.json
+`
+	fmt.Print(help)
 }
 
 // runTUI runs the full interactive TUI.
