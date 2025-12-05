@@ -4,13 +4,19 @@ import "github.com/charmbracelet/bubbles/key"
 
 // KeyMap defines all key bindings for the application.
 type KeyMap struct {
-	Up     key.Binding
-	Down   key.Binding
-	Left   key.Binding
-	Right  key.Binding
-	Top    key.Binding
-	Bottom key.Binding
-	Quit   key.Binding
+	Up          key.Binding
+	Down        key.Binding
+	Left        key.Binding
+	Right       key.Binding
+	Top         key.Binding
+	Bottom      key.Binding
+	Yank        key.Binding
+	Cut         key.Binding
+	PasteAfter  key.Binding
+	PasteBefore key.Binding
+	AddBookmark key.Binding
+	AddFolder   key.Binding
+	Quit        key.Binding
 }
 
 // DefaultKeyMap returns the default vim-style key bindings.
@@ -39,6 +45,30 @@ func DefaultKeyMap() KeyMap {
 		Bottom: key.NewBinding(
 			key.WithKeys("G"),
 			key.WithHelp("G", "go to bottom"),
+		),
+		Yank: key.NewBinding(
+			key.WithKeys("y"),
+			key.WithHelp("yy", "yank"),
+		),
+		Cut: key.NewBinding(
+			key.WithKeys("d"),
+			key.WithHelp("dd", "cut"),
+		),
+		PasteAfter: key.NewBinding(
+			key.WithKeys("p"),
+			key.WithHelp("p", "paste after"),
+		),
+		PasteBefore: key.NewBinding(
+			key.WithKeys("P"),
+			key.WithHelp("P", "paste before"),
+		),
+		AddBookmark: key.NewBinding(
+			key.WithKeys("a"),
+			key.WithHelp("a", "add bookmark"),
+		),
+		AddFolder: key.NewBinding(
+			key.WithKeys("A"),
+			key.WithHelp("A", "add folder"),
 		),
 		Quit: key.NewBinding(
 			key.WithKeys("q", "ctrl+c"),

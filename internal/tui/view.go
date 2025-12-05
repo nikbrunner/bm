@@ -10,6 +10,11 @@ import (
 
 // renderView creates the complete Miller columns view.
 func (a App) renderView() string {
+	// Check if we're in a modal mode
+	if a.mode != ModeNormal {
+		return a.renderModal()
+	}
+
 	// Calculate pane widths (3 columns)
 	paneWidth := (a.width - 8) / 3 // account for borders and padding
 	if paneWidth < 20 {
@@ -38,6 +43,46 @@ func (a App) renderView() string {
 
 	return a.styles.App.Render(
 		lipgloss.JoinVertical(lipgloss.Left, columns, helpBar),
+	)
+}
+
+// renderModal renders the current modal dialog.
+func (a App) renderModal() string {
+	var title, content strings.Builder
+
+	modalStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("#7D56F4")).
+		Padding(1, 2).
+		Width(50)
+
+	switch a.mode {
+	case ModeAddFolder:
+		title.WriteString("Add Folder\n\n")
+		content.WriteString("Name:\n")
+		content.WriteString(a.titleInput.View())
+		content.WriteString("\n\n")
+		content.WriteString(a.styles.Help.Render("Enter: save • Esc: cancel"))
+
+	case ModeAddBookmark:
+		title.WriteString("Add Bookmark\n\n")
+		content.WriteString("Title:\n")
+		content.WriteString(a.titleInput.View())
+		content.WriteString("\n\n")
+		content.WriteString("URL:\n")
+		content.WriteString(a.urlInput.View())
+		content.WriteString("\n\n")
+		content.WriteString(a.styles.Help.Render("Tab: switch field • Enter: save • Esc: cancel"))
+	}
+
+	modalContent := a.styles.Title.Render(title.String()) + content.String()
+
+	return lipgloss.Place(
+		a.width,
+		a.height,
+		lipgloss.Center,
+		lipgloss.Center,
+		modalStyle.Render(modalContent),
 	)
 }
 
@@ -177,7 +222,7 @@ func (a App) renderItem(item Item, selected bool, maxWidth int) string {
 }
 
 func (a App) renderHelpBar() string {
-	help := "j/k: move  h/l: navigate  q: quit"
+	help := "j/k: move  h/l: navigate  a: add bookmark  A: add folder  yy: yank  dd: cut  p: paste  q: quit"
 	return a.styles.Help.Render(help)
 }
 
