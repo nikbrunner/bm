@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/nikbrunner/bm/internal/model"
+	"github.com/sahilm/fuzzy"
 )
 
 // Mode represents the current UI mode.
@@ -34,6 +35,24 @@ const (
 	SortVisited                 // by visit date (most recent first)
 )
 
+// fuzzyMatch represents a fuzzy search match with highlighting info.
+type fuzzyMatch struct {
+	Item           Item
+	MatchedIndexes []int
+	Score          int
+}
+
+// itemStrings implements fuzzy.Source for Item slice.
+type itemStrings []Item
+
+func (is itemStrings) String(i int) string {
+	return is[i].Title()
+}
+
+func (is itemStrings) Len() int {
+	return len(is)
+}
+
 // App is the main bubbletea model for the bookmark manager.
 type App struct {
 	store  *model.Store
@@ -50,8 +69,11 @@ type App struct {
 	sortMode SortMode
 
 	// Filter/search
-	filterQuery string
-	searchInput textinput.Model
+	filterQuery   string
+	searchInput   textinput.Model
+	fuzzyMatches  []fuzzyMatch    // Current fuzzy match results
+	fuzzyCursor   int             // Selected index in fuzzy results
+	allItems      []Item          // All items in current folder (unfiltered)
 
 	// For gg command
 	lastKeyWasG bool
@@ -137,36 +159,13 @@ func NewApp(params AppParams) App {
 	return app
 }
 
-// refreshItems rebuilds the items slice based on current folder, sort mode, and filter.
+// refreshItems rebuilds the items slice based on current folder and sort mode.
 func (a *App) refreshItems() {
 	a.items = []Item{}
 
 	// Get folders and bookmarks
 	folders := a.store.GetFoldersInFolder(a.currentFolderID)
 	bookmarks := a.store.GetBookmarksInFolder(a.currentFolderID)
-
-	// Apply filter if set
-	if a.filterQuery != "" {
-		query := strings.ToLower(a.filterQuery)
-
-		// Filter folders
-		filteredFolders := make([]model.Folder, 0)
-		for _, f := range folders {
-			if strings.Contains(strings.ToLower(f.Name), query) {
-				filteredFolders = append(filteredFolders, f)
-			}
-		}
-		folders = filteredFolders
-
-		// Filter bookmarks
-		filteredBookmarks := make([]model.Bookmark, 0)
-		for _, b := range bookmarks {
-			if strings.Contains(strings.ToLower(b.Title), query) {
-				filteredBookmarks = append(filteredBookmarks, b)
-			}
-		}
-		bookmarks = filteredBookmarks
-	}
 
 	// Apply sorting based on current mode
 	switch a.sortMode {
@@ -220,6 +219,38 @@ func (a *App) refreshItems() {
 	}
 }
 
+// updateFuzzyMatches performs fuzzy matching on allItems with the current query.
+func (a *App) updateFuzzyMatches() {
+	query := a.searchInput.Value()
+
+	if query == "" {
+		// No query - show all items
+		a.fuzzyMatches = make([]fuzzyMatch, len(a.allItems))
+		for i, item := range a.allItems {
+			a.fuzzyMatches[i] = fuzzyMatch{Item: item}
+		}
+		return
+	}
+
+	// Run fuzzy matching
+	matches := fuzzy.FindFrom(query, itemStrings(a.allItems))
+
+	// Convert to our fuzzyMatch type
+	a.fuzzyMatches = make([]fuzzyMatch, len(matches))
+	for i, m := range matches {
+		a.fuzzyMatches[i] = fuzzyMatch{
+			Item:           a.allItems[m.Index],
+			MatchedIndexes: m.MatchedIndexes,
+			Score:          m.Score,
+		}
+	}
+
+	// Reset cursor if out of bounds
+	if a.fuzzyCursor >= len(a.fuzzyMatches) {
+		a.fuzzyCursor = 0
+	}
+}
+
 // Cursor returns the current cursor position.
 func (a App) Cursor() int {
 	return a.cursor
@@ -253,6 +284,16 @@ func (a App) SortMode() SortMode {
 // FilterQuery returns the current filter query.
 func (a App) FilterQuery() string {
 	return a.filterQuery
+}
+
+// FuzzyMatches returns the current fuzzy match results.
+func (a App) FuzzyMatches() []fuzzyMatch {
+	return a.fuzzyMatches
+}
+
+// FuzzyCursor returns the selected index in fuzzy results.
+func (a App) FuzzyCursor() int {
+	return a.fuzzyCursor
 }
 
 // Init implements tea.Model.
@@ -444,11 +485,15 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.refreshItems()
 
 		case key.Matches(msg, a.keys.Search):
-			// Open search mode
+			// Open fuzzy finder mode
 			a.mode = ModeSearch
 			a.searchInput.Reset()
-			a.searchInput.SetValue(a.filterQuery) // Pre-fill with current filter
 			a.searchInput.Focus()
+			a.fuzzyCursor = 0
+			// Store all items for fuzzy matching
+			a.allItems = make([]Item, len(a.items))
+			copy(a.allItems, a.items)
+			a.updateFuzzyMatches()
 			return a, a.searchInput.Focus()
 		}
 	}
@@ -474,30 +519,69 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, nil
 	}
 
-	// Handle search mode
+	// Handle search mode (fuzzy finder)
 	if a.mode == ModeSearch {
 		switch msg.Type {
 		case tea.KeyEsc:
-			// Cancel search, clear filter
-			a.filterQuery = ""
+			// Cancel search
 			a.mode = ModeNormal
-			a.cursor = 0
-			a.refreshItems()
+			a.fuzzyMatches = nil
+			a.allItems = nil
 			return a, nil
+
 		case tea.KeyEnter:
-			// Confirm search, apply filter
-			a.filterQuery = a.searchInput.Value()
+			// Select highlighted item
+			if len(a.fuzzyMatches) > 0 && a.fuzzyCursor < len(a.fuzzyMatches) {
+				selectedItem := a.fuzzyMatches[a.fuzzyCursor].Item
+				// Find this item in the main items list and set cursor
+				for i, item := range a.items {
+					if item.ID() == selectedItem.ID() {
+						a.cursor = i
+						break
+					}
+				}
+			}
 			a.mode = ModeNormal
-			a.cursor = 0
-			a.refreshItems()
+			a.fuzzyMatches = nil
+			a.allItems = nil
+			return a, nil
+
+		case tea.KeyDown:
+			// Navigate down in results
+			if len(a.fuzzyMatches) > 0 && a.fuzzyCursor < len(a.fuzzyMatches)-1 {
+				a.fuzzyCursor++
+			}
+			return a, nil
+
+		case tea.KeyUp:
+			// Navigate up in results
+			if a.fuzzyCursor > 0 {
+				a.fuzzyCursor--
+			}
 			return a, nil
 		}
-		// Update search input and live-filter
+
+		// Handle j/k for vim-style navigation
+		if msg.Type == tea.KeyRunes {
+			switch string(msg.Runes) {
+			case "j":
+				if len(a.fuzzyMatches) > 0 && a.fuzzyCursor < len(a.fuzzyMatches)-1 {
+					a.fuzzyCursor++
+				}
+				return a, nil
+			case "k":
+				if a.fuzzyCursor > 0 {
+					a.fuzzyCursor--
+				}
+				return a, nil
+			}
+		}
+
+		// Update search input
 		var cmd tea.Cmd
 		a.searchInput, cmd = a.searchInput.Update(msg)
-		// Apply live filtering as user types
-		a.filterQuery = a.searchInput.Value()
-		a.refreshItems()
+		// Update fuzzy matches as user types
+		a.updateFuzzyMatches()
 		return a, cmd
 	}
 

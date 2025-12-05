@@ -109,10 +109,8 @@ func (a App) renderModal() string {
 		content.WriteString(a.styles.Help.Render("Enter: confirm • Esc: cancel"))
 
 	case ModeSearch:
-		title.WriteString("Filter\n\n")
-		content.WriteString(a.searchInput.View())
-		content.WriteString("\n\n")
-		content.WriteString(a.styles.Help.Render("Enter: apply • Esc: cancel"))
+		// Render full-screen fuzzy finder
+		return a.renderFuzzyFinder()
 	}
 
 	modalContent := a.styles.Title.Render(title.String()) + content.String()
@@ -261,6 +259,165 @@ func (a App) renderItem(item Item, selected bool, maxWidth int) string {
 	return a.styles.Item.Render(line)
 }
 
+// renderFuzzyFinder renders the fuzzy finder overlay.
+func (a App) renderFuzzyFinder() string {
+	// Calculate dimensions
+	width := a.width - 4
+	if width < 60 {
+		width = 60
+	}
+	height := a.height - 4
+	if height < 10 {
+		height = 10
+	}
+
+	// Input line at top
+	inputLine := "> " + a.searchInput.View()
+
+	// Split into results (left) and preview (right)
+	resultsWidth := (width - 4) / 2
+	previewWidth := width - resultsWidth - 4
+
+	// Build results list
+	var results strings.Builder
+	maxResults := height - 6 // Leave room for input and help
+	if maxResults < 3 {
+		maxResults = 3
+	}
+
+	if len(a.fuzzyMatches) == 0 {
+		results.WriteString(a.styles.Empty.Render("No matches"))
+	} else {
+		for i, match := range a.fuzzyMatches {
+			if i >= maxResults {
+				break
+			}
+			isSelected := i == a.fuzzyCursor
+			line := a.renderFuzzyItem(match, isSelected, resultsWidth-2)
+			results.WriteString(line + "\n")
+		}
+	}
+
+	// Build preview pane
+	var preview strings.Builder
+	if len(a.fuzzyMatches) > 0 && a.fuzzyCursor < len(a.fuzzyMatches) {
+		selectedItem := a.fuzzyMatches[a.fuzzyCursor].Item
+		if selectedItem.IsFolder() {
+			preview.WriteString(a.styles.Title.Render("📁 " + selectedItem.Folder.Name))
+			preview.WriteString("\n\n")
+			// Show folder contents count
+			folderID := selectedItem.Folder.ID
+			children := a.getItemsForFolder(&folderID)
+			preview.WriteString(a.styles.Date.Render(fmt.Sprintf("%d items", len(children))))
+		} else {
+			b := selectedItem.Bookmark
+			preview.WriteString(a.styles.Title.Render(b.Title))
+			preview.WriteString("\n\n")
+			// URL
+			url := b.URL
+			if len(url) > previewWidth-4 {
+				url = url[:previewWidth-7] + "..."
+			}
+			preview.WriteString(a.styles.URL.Render(url))
+			preview.WriteString("\n\n")
+			// Tags
+			if len(b.Tags) > 0 {
+				tags := make([]string, len(b.Tags))
+				for i, tag := range b.Tags {
+					tags[i] = "#" + tag
+				}
+				preview.WriteString(a.styles.Tag.Render(strings.Join(tags, " ")))
+				preview.WriteString("\n")
+			}
+		}
+	}
+
+	// Style the panes
+	resultsPane := a.styles.PaneActive.
+		Width(resultsWidth).
+		Height(height - 5).
+		Render(strings.TrimRight(results.String(), "\n"))
+
+	previewPane := a.styles.Pane.
+		Width(previewWidth).
+		Height(height - 5).
+		Render(strings.TrimRight(preview.String(), "\n"))
+
+	// Join panes
+	panes := lipgloss.JoinHorizontal(lipgloss.Top, resultsPane, previewPane)
+
+	// Help text
+	help := a.styles.Help.Render("↑/k ↓/j: navigate • Enter: select • Esc: cancel")
+
+	// Build modal content
+	modalContent := lipgloss.JoinVertical(lipgloss.Left,
+		a.styles.Title.Render("Find"),
+		inputLine,
+		"",
+		panes,
+		help,
+	)
+
+	modalStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("#7D56F4")).
+		Padding(1, 2).
+		Width(width)
+
+	return lipgloss.Place(
+		a.width,
+		a.height,
+		lipgloss.Center,
+		lipgloss.Center,
+		modalStyle.Render(modalContent),
+	)
+}
+
+// renderFuzzyItem renders a single item in the fuzzy results with highlighting.
+func (a App) renderFuzzyItem(match fuzzyMatch, selected bool, maxWidth int) string {
+	var prefix string
+	if match.Item.IsFolder() {
+		prefix = "📁 "
+	} else {
+		prefix = "   "
+	}
+
+	title := match.Item.Title()
+
+	// Build highlighted string
+	var line strings.Builder
+	line.WriteString(prefix)
+
+	// Apply highlighting to matched characters
+	matchSet := make(map[int]bool)
+	for _, idx := range match.MatchedIndexes {
+		matchSet[idx] = true
+	}
+
+	for i, r := range title {
+		if matchSet[i] {
+			// Highlight matched character (bold/underline)
+			line.WriteString("\033[1;4m")
+			line.WriteRune(r)
+			line.WriteString("\033[0m")
+		} else {
+			line.WriteRune(r)
+		}
+	}
+
+	result := line.String()
+
+	// Truncate if needed (rough estimate due to ANSI codes)
+	if len(title)+len(prefix) > maxWidth {
+		result = prefix + title[:maxWidth-len(prefix)-3] + "..."
+	}
+
+	if selected {
+		return a.styles.ItemSelected.Render(result)
+	}
+	return a.styles.Item.Render(result)
+}
+
 func (a App) renderHelpBar() string {
 	// Build status indicators
 	var status strings.Builder
@@ -274,12 +431,7 @@ func (a App) renderHelpBar() string {
 	}
 	status.WriteString("[sort: " + sortLabels[a.sortMode] + "]")
 
-	// Filter indicator
-	if a.filterQuery != "" {
-		status.WriteString(" [filter: \"" + a.filterQuery + "\"]")
-	}
-
-	help := "j/k: move  h/l: navigate  /: filter  s: sort  a: add  e: edit  dd: cut  p: paste  q: quit"
+	help := "j/k: move  h/l: navigate  /: find  s: sort  a: add  e: edit  dd: cut  p: paste  q: quit"
 
 	return a.styles.Help.Render(status.String() + "  " + help)
 }

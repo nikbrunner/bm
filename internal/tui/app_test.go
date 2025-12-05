@@ -1312,27 +1312,9 @@ func TestApp_SortMode_DateVisited(t *testing.T) {
 	}
 }
 
-// === Phase 4 Tests: Search/Filter ===
+// === Phase 4 Tests: Fuzzy Finder ===
 
-func TestApp_Search_OpenModal(t *testing.T) {
-	store := &model.Store{
-		Folders:   []model.Folder{},
-		Bookmarks: []model.Bookmark{},
-	}
-
-	app := tui.NewApp(tui.AppParams{Store: store})
-
-	// Press '/' to open search mode
-	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
-	app = updated.(tui.App)
-
-	// Should be in search mode
-	if app.Mode() != tui.ModeSearch {
-		t.Errorf("expected ModeSearch after '/', got %d", app.Mode())
-	}
-}
-
-func TestApp_Search_Cancel(t *testing.T) {
+func TestApp_FuzzyFinder_Open(t *testing.T) {
 	store := &model.Store{
 		Folders: []model.Folder{
 			{ID: "f1", Name: "Dev", ParentID: nil},
@@ -1343,15 +1325,41 @@ func TestApp_Search_Cancel(t *testing.T) {
 
 	app := tui.NewApp(tui.AppParams{Store: store})
 
-	// Open search
+	// Press '/' to open fuzzy finder
 	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
 	app = updated.(tui.App)
 
-	// Type something to filter
-	for _, r := range "Dev" {
-		updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
-		app = updated.(tui.App)
+	// Should be in search mode
+	if app.Mode() != tui.ModeSearch {
+		t.Errorf("expected ModeSearch after '/', got %d", app.Mode())
 	}
+
+	// Should have all items in fuzzy matches (no query = show all)
+	if len(app.FuzzyMatches()) != 2 {
+		t.Errorf("expected 2 fuzzy matches, got %d", len(app.FuzzyMatches()))
+	}
+
+	// Cursor should start at 0
+	if app.FuzzyCursor() != 0 {
+		t.Errorf("expected fuzzyCursor 0, got %d", app.FuzzyCursor())
+	}
+}
+
+func TestApp_FuzzyFinder_Cancel(t *testing.T) {
+	store := &model.Store{
+		Folders: []model.Folder{
+			{ID: "f1", Name: "Dev", ParentID: nil},
+			{ID: "f2", Name: "Design", ParentID: nil},
+		},
+		Bookmarks: []model.Bookmark{},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+	originalCursor := app.Cursor()
+
+	// Open fuzzy finder
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	app = updated.(tui.App)
 
 	// Press Esc to cancel
 	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyEsc})
@@ -1362,18 +1370,18 @@ func TestApp_Search_Cancel(t *testing.T) {
 		t.Error("expected normal mode after Esc")
 	}
 
-	// Filter should be cleared, all items visible
-	if len(app.Items()) != 2 {
-		t.Errorf("expected 2 items after cancel, got %d", len(app.Items()))
+	// Cursor should be unchanged
+	if app.Cursor() != originalCursor {
+		t.Errorf("expected cursor %d, got %d", originalCursor, app.Cursor())
 	}
 
-	// Filter query should be empty
-	if app.FilterQuery() != "" {
-		t.Errorf("expected empty filter query after cancel, got %q", app.FilterQuery())
+	// Fuzzy matches should be cleared
+	if len(app.FuzzyMatches()) != 0 {
+		t.Errorf("expected 0 fuzzy matches after cancel, got %d", len(app.FuzzyMatches()))
 	}
 }
 
-func TestApp_Search_FiltersItems(t *testing.T) {
+func TestApp_FuzzyFinder_Filters(t *testing.T) {
 	store := &model.Store{
 		Folders: []model.Folder{
 			{ID: "f1", Name: "Development", ParentID: nil},
@@ -1388,7 +1396,7 @@ func TestApp_Search_FiltersItems(t *testing.T) {
 
 	app := tui.NewApp(tui.AppParams{Store: store})
 
-	// Open search and type "Dev"
+	// Open fuzzy finder and type "Dev"
 	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
 	app = updated.(tui.App)
 
@@ -1397,77 +1405,84 @@ func TestApp_Search_FiltersItems(t *testing.T) {
 		app = updated.(tui.App)
 	}
 
-	// Should filter to items containing "Dev"
-	items := app.Items()
-	if len(items) != 2 {
-		t.Fatalf("expected 2 items matching 'Dev', got %d", len(items))
+	// Should filter fuzzy matches to items containing "Dev"
+	matches := app.FuzzyMatches()
+	if len(matches) != 2 {
+		t.Fatalf("expected 2 fuzzy matches for 'Dev', got %d", len(matches))
 	}
 
 	// Check that we got the right items
-	names := []string{}
-	for _, item := range items {
-		names = append(names, item.Title())
-	}
-	// Should have "Development" folder and "DevOps Guide" bookmark
 	found := map[string]bool{"Development": false, "DevOps Guide": false}
-	for _, name := range names {
-		if _, ok := found[name]; ok {
-			found[name] = true
+	for _, match := range matches {
+		title := match.Item.Title()
+		if _, ok := found[title]; ok {
+			found[title] = true
 		}
 	}
 	for name, wasFound := range found {
 		if !wasFound {
-			t.Errorf("expected to find %q in filtered results", name)
+			t.Errorf("expected to find %q in fuzzy matches", name)
 		}
 	}
 }
 
-func TestApp_Search_CaseInsensitive(t *testing.T) {
+func TestApp_FuzzyFinder_Navigate(t *testing.T) {
 	store := &model.Store{
 		Folders: []model.Folder{
-			{ID: "f1", Name: "Development", ParentID: nil},
+			{ID: "f1", Name: "Alpha", ParentID: nil},
+			{ID: "f2", Name: "Beta", ParentID: nil},
+			{ID: "f3", Name: "Gamma", ParentID: nil},
 		},
 		Bookmarks: []model.Bookmark{},
 	}
 
 	app := tui.NewApp(tui.AppParams{Store: store})
 
-	// Open search and type lowercase "dev"
+	// Open fuzzy finder
 	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
 	app = updated.(tui.App)
 
-	for _, r := range "dev" {
-		updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
-		app = updated.(tui.App)
+	// Should start at 0
+	if app.FuzzyCursor() != 0 {
+		t.Errorf("expected fuzzyCursor 0, got %d", app.FuzzyCursor())
 	}
 
-	// Should find "Development" (case insensitive)
-	if len(app.Items()) != 1 {
-		t.Errorf("expected 1 item for case-insensitive search, got %d", len(app.Items()))
+	// Press down arrow to move down
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyDown})
+	app = updated.(tui.App)
+	if app.FuzzyCursor() != 1 {
+		t.Errorf("expected fuzzyCursor 1 after down, got %d", app.FuzzyCursor())
+	}
+
+	// Press up arrow to move up
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyUp})
+	app = updated.(tui.App)
+	if app.FuzzyCursor() != 0 {
+		t.Errorf("expected fuzzyCursor 0 after up, got %d", app.FuzzyCursor())
 	}
 }
 
-func TestApp_Search_Enter_ConfirmsFilter(t *testing.T) {
+func TestApp_FuzzyFinder_SelectItem(t *testing.T) {
 	store := &model.Store{
 		Folders: []model.Folder{
-			{ID: "f1", Name: "Development", ParentID: nil},
-			{ID: "f2", Name: "Design", ParentID: nil},
+			{ID: "f1", Name: "Alpha", ParentID: nil},
+			{ID: "f2", Name: "Beta", ParentID: nil},
+			{ID: "f3", Name: "Gamma", ParentID: nil},
 		},
 		Bookmarks: []model.Bookmark{},
 	}
 
 	app := tui.NewApp(tui.AppParams{Store: store})
 
-	// Open search and type "Dev"
+	// Open fuzzy finder
 	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
 	app = updated.(tui.App)
 
-	for _, r := range "Dev" {
-		updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
-		app = updated.(tui.App)
-	}
+	// Navigate to second item (Beta)
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyDown})
+	app = updated.(tui.App)
 
-	// Press Enter to confirm filter
+	// Press Enter to select
 	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	app = updated.(tui.App)
 
@@ -1476,61 +1491,49 @@ func TestApp_Search_Enter_ConfirmsFilter(t *testing.T) {
 		t.Error("expected normal mode after Enter")
 	}
 
-	// Filter should still be active
-	if len(app.Items()) != 1 {
-		t.Errorf("expected 1 filtered item after Enter, got %d", len(app.Items()))
+	// Cursor should be on Beta (index 1)
+	if app.Cursor() != 1 {
+		t.Errorf("expected cursor 1 (Beta), got %d", app.Cursor())
 	}
 
-	// Filter query should be preserved
-	if app.FilterQuery() != "Dev" {
-		t.Errorf("expected filter query 'Dev', got %q", app.FilterQuery())
+	// Fuzzy matches should be cleared
+	if len(app.FuzzyMatches()) != 0 {
+		t.Errorf("expected 0 fuzzy matches after select, got %d", len(app.FuzzyMatches()))
 	}
 }
 
-func TestApp_Search_ClearFilter(t *testing.T) {
+func TestApp_FuzzyFinder_SelectFilteredItem(t *testing.T) {
 	store := &model.Store{
 		Folders: []model.Folder{
-			{ID: "f1", Name: "Development", ParentID: nil},
-			{ID: "f2", Name: "Design", ParentID: nil},
+			{ID: "f1", Name: "Alpha", ParentID: nil},
+			{ID: "f2", Name: "Beta", ParentID: nil},
+			{ID: "f3", Name: "Gamma", ParentID: nil},
 		},
 		Bookmarks: []model.Bookmark{},
 	}
 
 	app := tui.NewApp(tui.AppParams{Store: store})
 
-	// Set up a filter
+	// Open fuzzy finder and type "Gam" to filter to Gamma
 	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
 	app = updated.(tui.App)
-	for _, r := range "Dev" {
+
+	for _, r := range "Gam" {
 		updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
 		app = updated.(tui.App)
 	}
+
+	// Should have 1 match (Gamma)
+	if len(app.FuzzyMatches()) != 1 {
+		t.Fatalf("expected 1 fuzzy match, got %d", len(app.FuzzyMatches()))
+	}
+
+	// Press Enter to select
 	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	app = updated.(tui.App)
 
-	// Verify filter is active
-	if len(app.Items()) != 1 {
-		t.Fatal("filter should be active")
-	}
-
-	// Press '/' again with empty query and Enter to clear filter
-	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
-	app = updated.(tui.App)
-
-	// Clear with Ctrl+U
-	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyCtrlU})
-	app = updated.(tui.App)
-
-	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	app = updated.(tui.App)
-
-	// Should show all items
-	if len(app.Items()) != 2 {
-		t.Errorf("expected 2 items after clearing filter, got %d", len(app.Items()))
-	}
-
-	// Filter query should be empty
-	if app.FilterQuery() != "" {
-		t.Errorf("expected empty filter query, got %q", app.FilterQuery())
+	// Cursor should be on Gamma (index 2 in original list)
+	if app.Cursor() != 2 {
+		t.Errorf("expected cursor 2 (Gamma), got %d", app.Cursor())
 	}
 }
