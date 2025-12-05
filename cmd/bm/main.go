@@ -24,6 +24,12 @@ func main() {
 		case "help", "--help", "-h":
 			printHelp()
 			return
+		case "init":
+			runInit()
+			return
+		case "reset":
+			runReset()
+			return
 		case "import":
 			if len(os.Args) < 3 {
 				fmt.Fprintf(os.Stderr, "Usage: bm import <file.html>\n")
@@ -57,6 +63,8 @@ func printHelp() {
 Usage:
   bm                    Open interactive TUI
   bm <query>            Quick search → select → open
+  bm init               Create config with sample data
+  bm reset              Clear all data (requires confirmation)
   bm import <file>      Import bookmarks from HTML
   bm export [path]      Export bookmarks to HTML
   bm help               Show this help
@@ -283,4 +291,124 @@ func runExport(outputPath string) {
 
 	fmt.Printf("Exported %d bookmarks, %d folders to %s\n",
 		len(store.Bookmarks), len(store.Folders), outputPath)
+}
+
+// runInit creates the config file with sample data.
+func runInit() {
+	configPath, err := storage.DefaultConfigPath()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error getting config path: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Check if file already exists
+	if _, err := os.Stat(configPath); err == nil {
+		fmt.Fprintf(os.Stderr, "Config file already exists: %s\n", configPath)
+		fmt.Fprintf(os.Stderr, "Use 'bm reset' to clear existing data\n")
+		os.Exit(1)
+	}
+
+	// Create sample data
+	now := time.Now()
+	devFolderID := "dev-folder"
+	toolsFolderID := "tools-folder"
+
+	store := &model.Store{
+		Folders: []model.Folder{
+			{
+				ID:       devFolderID,
+				Name:     "Development",
+				ParentID: nil,
+			},
+			{
+				ID:       toolsFolderID,
+				Name:     "Tools",
+				ParentID: nil,
+			},
+		},
+		Bookmarks: []model.Bookmark{
+			{
+				ID:        "bm-github",
+				Title:     "GitHub",
+				URL:       "https://github.com",
+				FolderID:  &devFolderID,
+				Tags:      []string{"code", "git"},
+				CreatedAt: now,
+			},
+			{
+				ID:        "bm-go",
+				Title:     "Go Documentation",
+				URL:       "https://go.dev/doc",
+				FolderID:  &devFolderID,
+				Tags:      []string{"go", "docs"},
+				CreatedAt: now,
+			},
+			{
+				ID:        "bm-charm",
+				Title:     "Charm - TUI Libraries",
+				URL:       "https://charm.sh",
+				FolderID:  &toolsFolderID,
+				Tags:      []string{"tui", "go"},
+				CreatedAt: now,
+			},
+			{
+				ID:        "bm-hn",
+				Title:     "Hacker News",
+				URL:       "https://news.ycombinator.com",
+				FolderID:  nil,
+				Tags:      []string{"news", "tech"},
+				CreatedAt: now,
+			},
+		},
+	}
+
+	jsonStorage := storage.NewJSONStorage(configPath)
+	if err := jsonStorage.Save(store); err != nil {
+		fmt.Fprintf(os.Stderr, "Error saving config: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Created %s with sample data:\n", configPath)
+	fmt.Printf("  %d folders, %d bookmarks\n", len(store.Folders), len(store.Bookmarks))
+	fmt.Println("\nRun 'bm' to open the TUI")
+}
+
+// runReset clears all bookmarks and folders.
+func runReset() {
+	configPath, err := storage.DefaultConfigPath()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error getting config path: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Check if file exists
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		fmt.Fprintf(os.Stderr, "No config file found at: %s\n", configPath)
+		fmt.Fprintf(os.Stderr, "Use 'bm init' to create one\n")
+		os.Exit(1)
+	}
+
+	// Confirm reset
+	fmt.Printf("This will delete all bookmarks and folders in:\n  %s\n\n", configPath)
+	fmt.Print("Type 'yes' to confirm: ")
+	var confirm string
+	fmt.Scanln(&confirm)
+	if confirm != "yes" {
+		fmt.Println("Aborted")
+		os.Exit(0)
+	}
+
+	// Save empty store
+	store := &model.Store{
+		Folders:   []model.Folder{},
+		Bookmarks: []model.Bookmark{},
+	}
+
+	jsonStorage := storage.NewJSONStorage(configPath)
+	if err := jsonStorage.Save(store); err != nil {
+		fmt.Fprintf(os.Stderr, "Error saving config: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("All data cleared")
 }
