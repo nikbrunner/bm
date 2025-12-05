@@ -320,7 +320,7 @@ func TestApp_ItemsOrder_FoldersFirst(t *testing.T) {
 
 // === CRUD Tests: Yank/Cut/Paste ===
 
-func TestApp_Yank_YY(t *testing.T) {
+func TestApp_Yank_Y(t *testing.T) {
 	store := &model.Store{
 		Folders: []model.Folder{
 			{ID: "f1", Name: "Folder 1", ParentID: nil},
@@ -336,10 +336,8 @@ func TestApp_Yank_YY(t *testing.T) {
 		t.Error("expected no yanked item initially")
 	}
 
-	// Press y twice for yy (yank)
+	// Press y once to yank
 	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
-	app = updated.(tui.App)
-	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	app = updated.(tui.App)
 
 	// Should have yanked the first folder
@@ -357,29 +355,7 @@ func TestApp_Yank_YY(t *testing.T) {
 	}
 }
 
-func TestApp_Yank_SingleY_Cancels(t *testing.T) {
-	store := &model.Store{
-		Folders: []model.Folder{
-			{ID: "f1", Name: "Folder 1", ParentID: nil},
-		},
-		Bookmarks: []model.Bookmark{},
-	}
-
-	app := tui.NewApp(tui.AppParams{Store: store})
-
-	// Press y once, then j (should cancel yy sequence)
-	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
-	app = updated.(tui.App)
-	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
-	app = updated.(tui.App)
-
-	// Should not have yanked
-	if app.YankedItem() != nil {
-		t.Error("single y followed by other key should not yank")
-	}
-}
-
-func TestApp_Cut_DD_Bookmark(t *testing.T) {
+func TestApp_Cut_X_Bookmark(t *testing.T) {
 	// Test cut with bookmarks (which delete immediately without confirmation)
 	store := &model.Store{
 		Folders: []model.Folder{},
@@ -391,10 +367,8 @@ func TestApp_Cut_DD_Bookmark(t *testing.T) {
 
 	app := tui.NewApp(tui.AppParams{Store: store})
 
-	// Press d twice for dd (cut)
-	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
-	app = updated.(tui.App)
-	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	// Press x to cut
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
 	app = updated.(tui.App)
 
 	// Should have yanked the first bookmark
@@ -417,6 +391,38 @@ func TestApp_Cut_DD_Bookmark(t *testing.T) {
 	}
 }
 
+func TestApp_Delete_D_Bookmark(t *testing.T) {
+	// Test delete with bookmarks (deletes without buffering)
+	store := &model.Store{
+		Folders: []model.Folder{},
+		Bookmarks: []model.Bookmark{
+			{ID: "b1", Title: "Bookmark 1", URL: "https://1.com", FolderID: nil},
+			{ID: "b2", Title: "Bookmark 2", URL: "https://2.com", FolderID: nil},
+		},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+
+	// Press d to delete (no buffer)
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	app = updated.(tui.App)
+
+	// Should NOT have yanked (delete doesn't buffer)
+	if app.YankedItem() != nil {
+		t.Error("delete should not buffer the item")
+	}
+
+	// Item should be deleted
+	if len(app.Items()) != 1 {
+		t.Errorf("delete should remove item, expected 1 item, got %d", len(app.Items()))
+	}
+
+	// Remaining item should be b2
+	if app.Items()[0].Bookmark.ID != "b2" {
+		t.Error("expected b2 to remain after deleting b1")
+	}
+}
+
 func TestApp_Paste_P_After(t *testing.T) {
 	store := &model.Store{
 		Folders: []model.Folder{
@@ -430,8 +436,6 @@ func TestApp_Paste_P_After(t *testing.T) {
 
 	// Yank first item (f1)
 	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
-	app = updated.(tui.App)
-	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	app = updated.(tui.App)
 
 	// Move to second item
@@ -477,8 +481,6 @@ func TestApp_Paste_ShiftP_Before(t *testing.T) {
 
 	// Move to second item and yank it
 	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
-	app = updated.(tui.App)
-	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	app = updated.(tui.App)
 	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	app = updated.(tui.App)
@@ -1025,10 +1027,8 @@ func TestApp_DeleteFolder_ShowsConfirmation(t *testing.T) {
 
 	app := tui.NewApp(tui.AppParams{Store: store})
 
-	// Press dd on a folder
+	// Press d on a folder (shows confirmation)
 	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
-	app = updated.(tui.App)
-	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
 	app = updated.(tui.App)
 
 	// Should be in confirm delete mode
@@ -1052,10 +1052,8 @@ func TestApp_DeleteFolder_ConfirmWithEnter(t *testing.T) {
 
 	app := tui.NewApp(tui.AppParams{Store: store})
 
-	// Press dd to open confirmation
+	// Press d to open confirmation (delete mode)
 	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
-	app = updated.(tui.App)
-	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
 	app = updated.(tui.App)
 
 	// Press Enter to confirm
@@ -1072,9 +1070,43 @@ func TestApp_DeleteFolder_ConfirmWithEnter(t *testing.T) {
 		t.Error("folder should be deleted after confirmation")
 	}
 
-	// Should have yanked the item
+	// Should NOT have yanked the item (delete doesn't buffer)
+	if app.YankedItem() != nil {
+		t.Error("delete should not buffer the item")
+	}
+}
+
+func TestApp_CutFolder_ConfirmWithEnter(t *testing.T) {
+	store := &model.Store{
+		Folders: []model.Folder{
+			{ID: "f1", Name: "My Folder", ParentID: nil},
+		},
+		Bookmarks: []model.Bookmark{},
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: store})
+
+	// Press x to open confirmation (cut mode)
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	app = updated.(tui.App)
+
+	// Press Enter to confirm
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	app = updated.(tui.App)
+
+	// Should be back in normal mode
+	if app.Mode() != tui.ModeNormal {
+		t.Errorf("expected normal mode after confirm, got %d", app.Mode())
+	}
+
+	// Folder should be deleted
+	if len(app.Items()) != 0 {
+		t.Error("folder should be deleted after confirmation")
+	}
+
+	// Should have yanked the item (cut buffers)
 	if app.YankedItem() == nil {
-		t.Error("deleted item should be in yank buffer")
+		t.Error("cut item should be in yank buffer")
 	}
 }
 
@@ -1088,10 +1120,8 @@ func TestApp_DeleteFolder_CancelWithEsc(t *testing.T) {
 
 	app := tui.NewApp(tui.AppParams{Store: store})
 
-	// Press dd to open confirmation
+	// Press d to open confirmation
 	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
-	app = updated.(tui.App)
-	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
 	app = updated.(tui.App)
 
 	// Press Esc to cancel
@@ -1119,10 +1149,8 @@ func TestApp_DeleteBookmark_NoConfirmation(t *testing.T) {
 
 	app := tui.NewApp(tui.AppParams{Store: store})
 
-	// Press dd on a bookmark
+	// Press d on a bookmark (deletes immediately without confirmation)
 	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
-	app = updated.(tui.App)
-	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
 	app = updated.(tui.App)
 
 	// Should delete immediately (no confirmation for bookmarks)
@@ -1849,10 +1877,8 @@ func TestApp_StatusMessage_AfterDelete(t *testing.T) {
 
 	app := tui.NewApp(tui.AppParams{Store: store})
 
-	// Press dd to delete
+	// Press d to delete
 	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
-	app = updated.(tui.App)
-	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
 	app = updated.(tui.App)
 
 	// Should have status message
@@ -1860,8 +1886,8 @@ func TestApp_StatusMessage_AfterDelete(t *testing.T) {
 	if msg == "" {
 		t.Error("expected status message after delete")
 	}
-	if !containsStr(msg, "deleted") && !containsStr(msg, "Deleted") && !containsStr(msg, "cut") && !containsStr(msg, "Cut") {
-		t.Errorf("expected 'deleted' or 'cut' in status message, got: %q", msg)
+	if !containsStr(msg, "deleted") && !containsStr(msg, "Deleted") {
+		t.Errorf("expected 'deleted' or 'Deleted' in status message, got: %q", msg)
 	}
 }
 
@@ -1875,10 +1901,8 @@ func TestApp_StatusMessage_AfterYank(t *testing.T) {
 
 	app := tui.NewApp(tui.AppParams{Store: store})
 
-	// Press yy to yank
+	// Press y to yank
 	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
-	app = updated.(tui.App)
-	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	app = updated.(tui.App)
 
 	// Should have status message

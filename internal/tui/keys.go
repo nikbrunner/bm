@@ -11,6 +11,7 @@ type KeyMap struct {
 	Top         key.Binding
 	Bottom      key.Binding
 	Yank        key.Binding
+	Delete      key.Binding
 	Cut         key.Binding
 	PasteAfter  key.Binding
 	PasteBefore key.Binding
@@ -55,11 +56,15 @@ func DefaultKeyMap() KeyMap {
 		),
 		Yank: key.NewBinding(
 			key.WithKeys("y"),
-			key.WithHelp("yy", "yank"),
+			key.WithHelp("y", "yank"),
+		),
+		Delete: key.NewBinding(
+			key.WithKeys("d"),
+			key.WithHelp("d", "delete"),
 		),
 		Cut: key.NewBinding(
-			key.WithKeys("d"),
-			key.WithHelp("dd", "cut"),
+			key.WithKeys("x"),
+			key.WithHelp("x", "cut"),
 		),
 		PasteAfter: key.NewBinding(
 			key.WithKeys("p"),

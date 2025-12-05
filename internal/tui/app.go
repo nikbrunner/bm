@@ -83,12 +83,6 @@ type App struct {
 	// For gg command
 	lastKeyWasG bool
 
-	// For yy command
-	lastKeyWasY bool
-
-	// For dd command
-	lastKeyWasD bool
-
 	// Yank buffer
 	yankedItem *Item
 
@@ -98,6 +92,7 @@ type App struct {
 	urlInput   textinput.Model
 	tagsInput  textinput.Model
 	editItemID string // ID of item being edited (folder or bookmark)
+	cutMode    bool   // true = cut (buffer), false = delete (no buffer)
 
 	// Status message (for user feedback)
 	statusMessage string
@@ -362,45 +357,32 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			// First g - wait for second
 			a.lastKeyWasG = true
-			a.lastKeyWasY = false
-			a.lastKeyWasD = false
 			return a, nil
 		}
 
-		// Handle yy sequence
+		// Handle y - yank (copy)
 		if key.Matches(msg, a.keys.Yank) {
-			if a.lastKeyWasY {
-				// This is the second y - yank current item
-				a.yankCurrentItem()
-				a.lastKeyWasY = false
-				return a, nil
-			}
-			// First y - wait for second
-			a.lastKeyWasY = true
 			a.lastKeyWasG = false
-			a.lastKeyWasD = false
+			a.yankCurrentItem()
 			return a, nil
 		}
 
-		// Handle dd sequence
-		if key.Matches(msg, a.keys.Cut) {
-			if a.lastKeyWasD {
-				// This is the second d - cut current item
-				a.cutCurrentItem()
-				a.lastKeyWasD = false
-				return a, nil
-			}
-			// First d - wait for second
-			a.lastKeyWasD = true
+		// Handle d - delete (without buffer)
+		if key.Matches(msg, a.keys.Delete) {
 			a.lastKeyWasG = false
-			a.lastKeyWasY = false
+			a.deleteCurrentItem()
+			return a, nil
+		}
+
+		// Handle x - cut (delete + buffer)
+		if key.Matches(msg, a.keys.Cut) {
+			a.lastKeyWasG = false
+			a.cutCurrentItem()
 			return a, nil
 		}
 
 		// Reset sequence flags for any other key
 		a.lastKeyWasG = false
-		a.lastKeyWasY = false
-		a.lastKeyWasD = false
 
 		switch {
 		case key.Matches(msg, a.keys.Quit):
@@ -854,13 +836,43 @@ func (a *App) cutCurrentItem() {
 	// For folders, show confirmation dialog
 	if item.IsFolder() {
 		a.editItemID = item.Folder.ID
+		a.cutMode = true
 		a.mode = ModeConfirmDelete
 		return
 	}
 
-	// For bookmarks, delete immediately
+	// For bookmarks, cut immediately (delete + buffer)
 	title := item.Bookmark.Title
 	a.yankedItem = &item
+	a.store.RemoveBookmarkByID(item.Bookmark.ID)
+
+	// Refresh items and adjust cursor
+	a.refreshItems()
+	if a.cursor >= len(a.items) && a.cursor > 0 {
+		a.cursor--
+	}
+	a.setStatus("Cut: " + title)
+}
+
+// deleteCurrentItem deletes the current item without copying to yank buffer.
+// For folders, it shows a confirmation dialog instead of deleting immediately.
+func (a *App) deleteCurrentItem() {
+	if len(a.items) == 0 || a.cursor >= len(a.items) {
+		return
+	}
+
+	item := a.items[a.cursor]
+
+	// For folders, show confirmation dialog
+	if item.IsFolder() {
+		a.editItemID = item.Folder.ID
+		a.cutMode = false
+		a.mode = ModeConfirmDelete
+		return
+	}
+
+	// For bookmarks, delete immediately (no buffer)
+	title := item.Bookmark.Title
 	a.store.RemoveBookmarkByID(item.Bookmark.ID)
 
 	// Refresh items and adjust cursor
@@ -878,9 +890,13 @@ func (a *App) confirmDeleteFolder() {
 		return
 	}
 
-	// Store in yank buffer before deleting
-	item := Item{Kind: ItemFolder, Folder: folder}
-	a.yankedItem = &item
+	title := folder.Name
+
+	// Only store in yank buffer if this was a cut operation
+	if a.cutMode {
+		item := Item{Kind: ItemFolder, Folder: folder}
+		a.yankedItem = &item
+	}
 
 	// Delete the folder
 	a.store.RemoveFolderByID(a.editItemID)
@@ -889,6 +905,12 @@ func (a *App) confirmDeleteFolder() {
 	a.refreshItems()
 	if a.cursor >= len(a.items) && a.cursor > 0 {
 		a.cursor--
+	}
+
+	if a.cutMode {
+		a.setStatus("Cut: " + title)
+	} else {
+		a.setStatus("Deleted: " + title)
 	}
 }
 

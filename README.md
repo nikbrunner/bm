@@ -5,7 +5,7 @@ A vim-style TUI bookmark manager for the terminal. Ranger/yazi-inspired with Mil
 ## Features
 
 - **Miller columns layout** - Parent | Current | Preview panes
-- **Vim keybindings** - `j/k`, `h/l`, `gg/G`, `dd`, `yy`, `p`
+- **Vim keybindings** - `j/k`, `h/l`, `gg/G`, `y`, `d`, `x`, `p`
 - **Fuzzy search** - Global search across all bookmarks
 - **Browser integration** - Import/export standard HTML bookmark format
 - **Simple storage** - Version-controllable JSON file
@@ -84,8 +84,9 @@ bm export ~/backup/bookmarks.html     # Export to custom path
 | `A` | Add folder |
 | `e` | Edit selected item |
 | `t` | Edit tags |
-| `yy` | Yank (copy) |
-| `dd` | Cut (delete) |
+| `y` | Yank (copy) |
+| `d` | Delete |
+| `x` | Cut (delete + buffer) |
 | `p/P` | Paste after/before |
 
 ### Other

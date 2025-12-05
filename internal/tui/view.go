@@ -443,7 +443,7 @@ func (a App) renderHelpBar() string {
 		status.WriteString("  " + statusStyle.Render(a.statusMessage))
 	}
 
-	help := "j/k: move  h/l: navigate  /: find  s: sort  a: add  e: edit  dd: cut  p: paste  ?: help  q: quit"
+	help := "j/k: move  h/l: navigate  /: find  s: sort  a: add  e: edit  y: yank  d: del  x: cut  p: paste  ?: help  q: quit"
 
 	return a.styles.Help.Render(status.String() + "  " + help)
 }
@@ -491,8 +491,9 @@ func (a App) renderHelpOverlay() string {
 	content.WriteString("  A         Add folder\n")
 	content.WriteString("  e         Edit selected\n")
 	content.WriteString("  t         Edit tags\n")
-	content.WriteString("  yy        Yank (copy)\n")
-	content.WriteString("  dd        Cut (delete)\n")
+	content.WriteString("  y         Yank (copy)\n")
+	content.WriteString("  d         Delete\n")
+	content.WriteString("  x         Cut (delete + buffer)\n")
 	content.WriteString("  p/P       Paste after/before\n")
 	content.WriteString("\n")
 
