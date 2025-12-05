@@ -29,7 +29,7 @@ func NewBookmark(params NewBookmarkParams) Bookmark {
 	}
 
 	return Bookmark{
-		ID:        generateUUID(),
+		ID:        GenerateUUID(),
 		Title:     params.Title,
 		URL:       params.URL,
 		FolderID:  params.FolderID,

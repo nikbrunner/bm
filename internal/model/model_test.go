@@ -194,3 +194,117 @@ func TestStore_GetFolderByID(t *testing.T) {
 		t.Error("expected nil for nonexistent folder")
 	}
 }
+
+// === Import Merge Tests ===
+
+func TestStore_HasBookmarkURL(t *testing.T) {
+	store := model.Store{
+		Folders: []model.Folder{},
+		Bookmarks: []model.Bookmark{
+			{ID: "b1", Title: "Example", URL: "https://example.com", FolderID: nil},
+		},
+	}
+
+	if !store.HasBookmarkURL("https://example.com") {
+		t.Error("expected to find existing URL")
+	}
+
+	if store.HasBookmarkURL("https://notfound.com") {
+		t.Error("should not find non-existing URL")
+	}
+}
+
+func TestStore_ImportMerge_SkipsDuplicateURLs(t *testing.T) {
+	store := model.Store{
+		Folders: []model.Folder{},
+		Bookmarks: []model.Bookmark{
+			{ID: "existing", Title: "Existing", URL: "https://example.com", FolderID: nil},
+		},
+	}
+
+	newFolders := []model.Folder{}
+	newBookmarks := []model.Bookmark{
+		{ID: "new1", Title: "Duplicate", URL: "https://example.com", FolderID: nil}, // should skip
+		{ID: "new2", Title: "New Site", URL: "https://newsite.com", FolderID: nil},  // should add
+	}
+
+	added, skipped := store.ImportMerge(newFolders, newBookmarks)
+
+	if added != 1 {
+		t.Errorf("expected 1 added, got %d", added)
+	}
+	if skipped != 1 {
+		t.Errorf("expected 1 skipped, got %d", skipped)
+	}
+
+	// Should have 2 bookmarks total (1 existing + 1 new)
+	if len(store.Bookmarks) != 2 {
+		t.Errorf("expected 2 bookmarks, got %d", len(store.Bookmarks))
+	}
+}
+
+func TestStore_ImportMerge_ReusesFolderByName(t *testing.T) {
+	existingFolderID := "existing-folder"
+	store := model.Store{
+		Folders: []model.Folder{
+			{ID: existingFolderID, Name: "Development", ParentID: nil},
+		},
+		Bookmarks: []model.Bookmark{},
+	}
+
+	// Import a folder with same name at same level (root) - should reuse existing
+	newFolders := []model.Folder{
+		{ID: "imported-folder", Name: "Development", ParentID: nil},
+	}
+	// Bookmark pointing to the imported folder ID
+	newBookmarks := []model.Bookmark{
+		{ID: "b1", Title: "New Bookmark", URL: "https://new.com", FolderID: stringPtr("imported-folder")},
+	}
+
+	store.ImportMerge(newFolders, newBookmarks)
+
+	// Should still have just 1 folder (reused existing)
+	if len(store.Folders) != 1 {
+		t.Errorf("expected 1 folder (reused), got %d", len(store.Folders))
+	}
+
+	// The imported bookmark should be remapped to existing folder ID
+	if len(store.Bookmarks) != 1 {
+		t.Fatalf("expected 1 bookmark, got %d", len(store.Bookmarks))
+	}
+	if store.Bookmarks[0].FolderID == nil || *store.Bookmarks[0].FolderID != existingFolderID {
+		t.Errorf("bookmark should be in existing folder %s, got %v", existingFolderID, store.Bookmarks[0].FolderID)
+	}
+}
+
+func TestStore_ImportMerge_CountsCorrectly(t *testing.T) {
+	store := model.Store{
+		Folders:   []model.Folder{},
+		Bookmarks: []model.Bookmark{},
+	}
+
+	newFolders := []model.Folder{
+		{ID: "f1", Name: "Folder1", ParentID: nil},
+		{ID: "f2", Name: "Folder2", ParentID: nil},
+	}
+	newBookmarks := []model.Bookmark{
+		{ID: "b1", Title: "Bookmark1", URL: "https://one.com", FolderID: nil},
+		{ID: "b2", Title: "Bookmark2", URL: "https://two.com", FolderID: nil},
+		{ID: "b3", Title: "Bookmark3", URL: "https://three.com", FolderID: nil},
+	}
+
+	added, skipped := store.ImportMerge(newFolders, newBookmarks)
+
+	if added != 3 {
+		t.Errorf("expected 3 bookmarks added, got %d", added)
+	}
+	if skipped != 0 {
+		t.Errorf("expected 0 skipped, got %d", skipped)
+	}
+	if len(store.Folders) != 2 {
+		t.Errorf("expected 2 folders, got %d", len(store.Folders))
+	}
+	if len(store.Bookmarks) != 3 {
+		t.Errorf("expected 3 bookmarks, got %d", len(store.Bookmarks))
+	}
+}

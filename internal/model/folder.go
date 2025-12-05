@@ -16,7 +16,7 @@ type NewFolderParams struct {
 // NewFolder creates a Folder with generated UUID.
 func NewFolder(params NewFolderParams) Folder {
 	return Folder{
-		ID:       generateUUID(),
+		ID:       GenerateUUID(),
 		Name:     params.Name,
 		ParentID: params.ParentID,
 	}

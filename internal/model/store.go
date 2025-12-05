@@ -143,3 +143,91 @@ func (s *Store) InsertBookmarkAt(b Bookmark, index int) {
 	globalIdx := positions[index]
 	s.Bookmarks = append(s.Bookmarks[:globalIdx], append([]Bookmark{b}, s.Bookmarks[globalIdx:]...)...)
 }
+
+// HasBookmarkURL checks if a bookmark with the given URL already exists.
+func (s *Store) HasBookmarkURL(url string) bool {
+	for _, b := range s.Bookmarks {
+		if b.URL == url {
+			return true
+		}
+	}
+	return false
+}
+
+// ImportMerge imports folders and bookmarks, skipping duplicate URLs.
+// Returns the count of bookmarks added and skipped.
+func (s *Store) ImportMerge(folders []Folder, bookmarks []Bookmark) (added, skipped int) {
+	// Build a map from imported folder IDs to actual IDs (may be remapped)
+	folderIDMap := make(map[string]string)
+
+	// Process folders - reuse existing folders with same name at same level
+	for _, f := range folders {
+		// Remap parent ID if it was imported
+		var actualParentID *string
+		if f.ParentID != nil {
+			if remapped, ok := folderIDMap[*f.ParentID]; ok {
+				actualParentID = &remapped
+			} else {
+				actualParentID = f.ParentID
+			}
+		}
+
+		// Check if folder with same name exists at same parent level
+		existingFolder := s.findFolderByNameAndParent(f.Name, actualParentID)
+		if existingFolder != nil {
+			// Reuse existing folder
+			folderIDMap[f.ID] = existingFolder.ID
+		} else {
+			// Create new folder with remapped parent
+			newFolder := NewFolder(NewFolderParams{
+				Name:     f.Name,
+				ParentID: actualParentID,
+			})
+			s.Folders = append(s.Folders, newFolder)
+			folderIDMap[f.ID] = newFolder.ID
+		}
+	}
+
+	// Process bookmarks - skip duplicates by URL
+	for _, b := range bookmarks {
+		if s.HasBookmarkURL(b.URL) {
+			skipped++
+			continue
+		}
+
+		// Remap folder ID if it was imported
+		var actualFolderID *string
+		if b.FolderID != nil {
+			if remapped, ok := folderIDMap[*b.FolderID]; ok {
+				actualFolderID = &remapped
+			} else {
+				actualFolderID = b.FolderID
+			}
+		}
+
+		// Create new bookmark with remapped folder ID
+		newBookmark := Bookmark{
+			ID:        GenerateUUID(),
+			Title:     b.Title,
+			URL:       b.URL,
+			FolderID:  actualFolderID,
+			Tags:      b.Tags,
+			CreatedAt: b.CreatedAt,
+			VisitedAt: b.VisitedAt,
+		}
+		s.Bookmarks = append(s.Bookmarks, newBookmark)
+		added++
+	}
+
+	return added, skipped
+}
+
+// findFolderByNameAndParent finds a folder by name and parent ID.
+func (s *Store) findFolderByNameAndParent(name string, parentID *string) *Folder {
+	for i := range s.Folders {
+		if s.Folders[i].Name == name && ptrEqual(s.Folders[i].ParentID, parentID) {
+			return &s.Folders[i]
+		}
+	}
+	return nil
+}
