@@ -237,6 +237,23 @@ func (a App) renderModal() string {
 	case ModeHelp:
 		// Render help overlay
 		return a.renderHelpOverlay()
+
+	case ModeQuickAdd:
+		title.WriteString("AI Quick Add\n\n")
+		content.WriteString("URL:\n")
+		content.WriteString(a.quickAddInput.View())
+		content.WriteString("\n\n")
+		content.WriteString(a.styles.Help.Render("Enter: analyze • Esc: cancel"))
+
+	case ModeQuickAddLoading:
+		title.WriteString("AI Quick Add\n\n")
+		content.WriteString("Analyzing link...\n\n")
+		content.WriteString(a.styles.Empty.Render("Please wait while AI suggests title, folder, and tags"))
+		content.WriteString("\n\n")
+		content.WriteString(a.styles.Help.Render("Esc: cancel"))
+
+	case ModeQuickAddConfirm:
+		return a.renderQuickAddConfirm()
 	}
 
 	modalContent := a.styles.Title.Render(title.String()) + content.String()
@@ -643,7 +660,7 @@ func (a App) renderHelpBar() string {
 	}
 
 	// Hints line
-	hints := "j/k: move  h/l: nav  o: open  m: pin  /: find  a: add  e: edit  d: del  ?: help  q: quit"
+	hints := "j/k: move  h/l: nav  o: open  m: pin  /: find  a: add  i: AI add  e: edit  d: del  ?: help  q: quit"
 
 	// Style without padding for individual lines
 	lineStyle := lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#666666", Dark: "#888888"})
@@ -654,6 +671,81 @@ func (a App) renderHelpBar() string {
 	// Only pad top, not bottom
 	wrapperStyle := lipgloss.NewStyle().PaddingTop(1)
 	return wrapperStyle.Render(content)
+}
+
+// renderQuickAddConfirm renders the AI quick add confirmation modal.
+func (a App) renderQuickAddConfirm() string {
+	modalWidth := 60
+	if a.width < 70 {
+		modalWidth = a.width - 10
+	}
+
+	modalStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("#7D56F4")).
+		Padding(1, 2).
+		Width(modalWidth)
+
+	var content strings.Builder
+	content.WriteString(a.styles.Title.Render("AI Quick Add - Confirm"))
+	content.WriteString("\n\n")
+
+	// Title input
+	titleLabel := "Title:"
+	if a.titleInput.Focused() {
+		titleLabel = a.styles.Tag.Render("Title:")
+	}
+	content.WriteString(titleLabel + "\n")
+	content.WriteString(a.titleInput.View())
+	content.WriteString("\n\n")
+
+	// Folder picker
+	folderLabel := "Folder:"
+	if !a.titleInput.Focused() && !a.tagsInput.Focused() {
+		folderLabel = a.styles.Tag.Render("Folder:")
+	}
+	content.WriteString(folderLabel + "\n")
+
+	// Show folder options with selection
+	visibleFolders := 5
+	start := 0
+	if a.quickAddFolderIdx >= visibleFolders {
+		start = a.quickAddFolderIdx - visibleFolders + 1
+	}
+	end := start + visibleFolders
+	if end > len(a.quickAddFolders) {
+		end = len(a.quickAddFolders)
+	}
+
+	for i := start; i < end; i++ {
+		folder := a.quickAddFolders[i]
+		if i == a.quickAddFolderIdx {
+			content.WriteString(a.styles.ItemSelected.Render("> " + folder))
+		} else {
+			content.WriteString("  " + folder)
+		}
+		content.WriteString("\n")
+	}
+	content.WriteString("\n")
+
+	// Tags input
+	tagsLabel := "Tags:"
+	if a.tagsInput.Focused() {
+		tagsLabel = a.styles.Tag.Render("Tags:")
+	}
+	content.WriteString(tagsLabel + "\n")
+	content.WriteString(a.tagsInput.View())
+	content.WriteString("\n\n")
+
+	content.WriteString(a.styles.Help.Render("Tab: next field • j/k: folder • Enter: save • Esc: cancel"))
+
+	return lipgloss.Place(
+		a.width,
+		a.height,
+		lipgloss.Center,
+		lipgloss.Center,
+		modalStyle.Render(content.String()),
+	)
 }
 
 // renderHelpOverlay renders the help overlay.
@@ -699,6 +791,7 @@ func (a App) renderHelpOverlay() string {
 	content.WriteString("\n")
 	content.WriteString("  a         Add bookmark\n")
 	content.WriteString("  A         Add folder\n")
+	content.WriteString("  i         AI quick add\n")
 	content.WriteString("  e         Edit selected\n")
 	content.WriteString("  t         Edit tags\n")
 	content.WriteString("  y         Yank (copy)\n")

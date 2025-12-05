@@ -1,6 +1,9 @@
 package model
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Store holds all bookmarks and folders.
 type Store struct {
@@ -278,4 +281,90 @@ func (s *Store) TogglePinFolder(id string) error {
 		}
 	}
 	return fmt.Errorf("folder not found: %s", id)
+}
+
+// GetFolderByPath finds a folder by its full path (e.g., "/Dev/React").
+// Returns nil if not found.
+func (s *Store) GetFolderByPath(path string) *Folder {
+	path = strings.TrimPrefix(path, "/")
+	if path == "" {
+		return nil
+	}
+
+	parts := strings.Split(path, "/")
+	var currentParentID *string
+
+	for i, name := range parts {
+		folder := s.findFolderByNameAndParent(name, currentParentID)
+		if folder == nil {
+			return nil
+		}
+		if i == len(parts)-1 {
+			return folder
+		}
+		currentParentID = &folder.ID
+	}
+
+	return nil
+}
+
+// GetOrCreateFolderByPath finds or creates a folder by its full path.
+// Creates any missing intermediate folders.
+// Returns the folder and whether any folders were created.
+func (s *Store) GetOrCreateFolderByPath(path string) (*Folder, bool) {
+	path = strings.TrimPrefix(path, "/")
+	if path == "" {
+		return nil, false
+	}
+
+	parts := strings.Split(path, "/")
+	var currentParentID *string
+	created := false
+
+	for i, name := range parts {
+		folder := s.findFolderByNameAndParent(name, currentParentID)
+		if folder == nil {
+			// Create the folder
+			newFolder := NewFolder(NewFolderParams{
+				Name:     name,
+				ParentID: currentParentID,
+			})
+			s.AddFolder(newFolder)
+			created = true
+
+			// Get the newly added folder
+			folder = s.findFolderByNameAndParent(name, currentParentID)
+		}
+
+		if i == len(parts)-1 {
+			return folder, created
+		}
+		currentParentID = &folder.ID
+	}
+
+	return nil, false
+}
+
+// GetFolderPath returns the full path string for a folder (e.g., "/Dev/React").
+func (s *Store) GetFolderPath(folderID *string) string {
+	if folderID == nil {
+		return "/"
+	}
+
+	var parts []string
+	currentID := folderID
+
+	for currentID != nil {
+		folder := s.GetFolderByID(*currentID)
+		if folder == nil {
+			break
+		}
+		parts = append([]string{folder.Name}, parts...)
+		currentID = folder.ParentID
+	}
+
+	if len(parts) == 0 {
+		return "/"
+	}
+	return "/" + strings.Join(parts, "/")
 }

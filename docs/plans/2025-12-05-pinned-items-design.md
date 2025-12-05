@@ -156,6 +156,5 @@ Visual distinction: focused pane has highlighted border.
 
 ## Future Considerations
 
-- Pin order (manual reordering within pinned pane)
-- Pin limit (max N pinned items)
-- Pin groups/categories
+- Smart add link with AI
+- Autocomplete for tags

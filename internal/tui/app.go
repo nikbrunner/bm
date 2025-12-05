@@ -11,9 +11,16 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/nikbrunner/bm/internal/ai"
 	"github.com/nikbrunner/bm/internal/model"
 	"github.com/sahilm/fuzzy"
 )
+
+// aiResponseMsg is sent when the AI API call completes.
+type aiResponseMsg struct {
+	response *ai.Response
+	err      error
+}
 
 // Mode represents the current UI mode.
 type Mode int
@@ -28,6 +35,9 @@ const (
 	ModeConfirmDelete
 	ModeSearch
 	ModeHelp
+	ModeQuickAdd        // URL input for AI quick add
+	ModeQuickAddLoading // Waiting for AI response
+	ModeQuickAddConfirm // Review/edit AI suggestion
 )
 
 // SortMode represents the current sort mode.
@@ -107,6 +117,13 @@ type App struct {
 	editItemID string // ID of item being edited (folder or bookmark)
 	cutMode    bool   // true = cut (buffer), false = delete (no buffer)
 
+	// Quick add (AI-powered) state
+	quickAddInput     textinput.Model // URL input
+	quickAddResponse  *ai.Response    // AI suggestion
+	quickAddError     error           // AI error (if any)
+	quickAddFolders   []string        // Available folder paths for picker
+	quickAddFolderIdx int             // Selected folder index in picker
+
 	// Settings
 	confirmDelete bool // true = ask confirmation before delete (default true)
 
@@ -158,6 +175,11 @@ func NewApp(params AppParams) App {
 	searchInput.CharLimit = 100
 	searchInput.Width = 40
 
+	quickAddInput := textinput.New()
+	quickAddInput.Placeholder = "https://..."
+	quickAddInput.CharLimit = 500
+	quickAddInput.Width = 50
+
 	app := App{
 		store:           params.Store,
 		keys:            keys,
@@ -172,6 +194,7 @@ func NewApp(params AppParams) App {
 		urlInput:        urlInput,
 		tagsInput:       tagsInput,
 		searchInput:     searchInput,
+		quickAddInput:   quickAddInput,
 		confirmDelete:   true,
 		width:           80,
 		height:          24,
@@ -405,6 +428,50 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.height = msg.Height
 		return a, nil
 
+	case aiResponseMsg:
+		// Handle AI response for quick add
+		if a.mode == ModeQuickAddLoading {
+			if msg.err != nil {
+				// AI failed - save to "To Review" with URL as title
+				a.quickAddError = msg.err
+				url := a.quickAddInput.Value()
+				folder, _ := a.store.GetOrCreateFolderByPath("To Review")
+				var folderID *string
+				if folder != nil {
+					folderID = &folder.ID
+				}
+				newBookmark := model.NewBookmark(model.NewBookmarkParams{
+					Title:    url,
+					URL:      url,
+					FolderID: folderID,
+					Tags:     []string{},
+				})
+				a.store.AddBookmark(newBookmark)
+				a.refreshItems()
+				a.mode = ModeNormal
+				a.setStatus("AI failed, saved to 'To Review': " + msg.err.Error())
+				return a, nil
+			}
+
+			// AI succeeded - show confirmation
+			a.quickAddResponse = msg.response
+			a.mode = ModeQuickAddConfirm
+
+			// Pre-fill inputs with AI suggestion
+			a.titleInput.Reset()
+			a.titleInput.SetValue(msg.response.Title)
+			a.tagsInput.Reset()
+			a.tagsInput.SetValue(strings.Join(msg.response.Tags, ", "))
+
+			// Build folder picker options
+			a.quickAddFolders = a.buildFolderPaths()
+			a.quickAddFolderIdx = a.findFolderIndex(msg.response.FolderPath)
+
+			a.titleInput.Focus()
+			return a, a.titleInput.Focus()
+		}
+		return a, nil
+
 	case tea.KeyMsg:
 		// Handle modal modes first
 		if a.mode != ModeNormal {
@@ -539,6 +606,19 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.titleInput.Reset()
 			a.titleInput.Focus()
 			return a, a.titleInput.Focus()
+
+		case key.Matches(msg, a.keys.QuickAdd):
+			// AI-powered quick add
+			a.mode = ModeQuickAdd
+			a.quickAddInput.Reset()
+			a.quickAddResponse = nil
+			a.quickAddError = nil
+			// Pre-fill with clipboard contents
+			if clipContent, err := clipboard.ReadAll(); err == nil && clipContent != "" {
+				a.quickAddInput.SetValue(clipContent)
+			}
+			a.quickAddInput.Focus()
+			return a, a.quickAddInput.Focus()
 
 		case key.Matches(msg, a.keys.Edit):
 			// Only edit if there's an item selected
@@ -922,6 +1002,105 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, cmd
 	}
 
+	// Handle quick add URL input mode
+	if a.mode == ModeQuickAdd {
+		switch msg.Type {
+		case tea.KeyEsc:
+			a.mode = ModeNormal
+			return a, nil
+		case tea.KeyEnter:
+			url := a.quickAddInput.Value()
+			if url == "" {
+				return a, nil
+			}
+			// Start AI call
+			a.mode = ModeQuickAddLoading
+			return a, a.callAICmd(url)
+		}
+		// Forward to input
+		var cmd tea.Cmd
+		a.quickAddInput, cmd = a.quickAddInput.Update(msg)
+		return a, cmd
+	}
+
+	// Handle quick add loading mode (no user input)
+	if a.mode == ModeQuickAddLoading {
+		// Only allow Esc to cancel
+		if msg.Type == tea.KeyEsc {
+			a.mode = ModeNormal
+			return a, nil
+		}
+		return a, nil
+	}
+
+	// Handle quick add confirmation mode
+	if a.mode == ModeQuickAddConfirm {
+		switch msg.Type {
+		case tea.KeyEsc:
+			a.mode = ModeNormal
+			return a, nil
+		case tea.KeyEnter:
+			// Save the bookmark with edited values
+			return a.submitQuickAdd()
+		case tea.KeyTab:
+			// Cycle through: title -> folder -> tags -> title
+			if a.titleInput.Focused() {
+				a.titleInput.Blur()
+				// Focus is now on folder picker (no input to focus)
+			} else if a.tagsInput.Focused() {
+				a.tagsInput.Blur()
+				a.titleInput.Focus()
+				return a, a.titleInput.Focus()
+			} else {
+				// Was on folder picker, move to tags
+				a.tagsInput.Focus()
+				return a, a.tagsInput.Focus()
+			}
+			return a, nil
+		case tea.KeyUp:
+			// Navigate folder picker up (when not in text input)
+			if !a.titleInput.Focused() && !a.tagsInput.Focused() {
+				if a.quickAddFolderIdx > 0 {
+					a.quickAddFolderIdx--
+				}
+			}
+			return a, nil
+		case tea.KeyDown:
+			// Navigate folder picker down (when not in text input)
+			if !a.titleInput.Focused() && !a.tagsInput.Focused() {
+				if a.quickAddFolderIdx < len(a.quickAddFolders)-1 {
+					a.quickAddFolderIdx++
+				}
+			}
+			return a, nil
+		}
+
+		// Handle j/k for folder navigation when not in text input
+		if msg.Type == tea.KeyRunes && !a.titleInput.Focused() && !a.tagsInput.Focused() {
+			switch string(msg.Runes) {
+			case "j":
+				if a.quickAddFolderIdx < len(a.quickAddFolders)-1 {
+					a.quickAddFolderIdx++
+				}
+				return a, nil
+			case "k":
+				if a.quickAddFolderIdx > 0 {
+					a.quickAddFolderIdx--
+				}
+				return a, nil
+			}
+		}
+
+		// Forward to active text input
+		var cmd tea.Cmd
+		if a.titleInput.Focused() {
+			a.titleInput, cmd = a.titleInput.Update(msg)
+		} else if a.tagsInput.Focused() {
+			a.tagsInput, cmd = a.tagsInput.Update(msg)
+		}
+		return a, cmd
+	}
+
 	switch msg.Type {
 	case tea.KeyEsc:
 		// Cancel modal
@@ -1062,6 +1241,51 @@ func (a App) submitModal() (tea.Model, tea.Cmd) {
 		return a, nil
 	}
 
+	return a, nil
+}
+
+// submitQuickAdd saves the bookmark from AI quick add confirmation.
+func (a App) submitQuickAdd() (tea.Model, tea.Cmd) {
+	title := a.titleInput.Value()
+	url := a.quickAddInput.Value()
+
+	if title == "" || url == "" {
+		return a, nil
+	}
+
+	// Parse tags
+	var tags []string
+	tagsStr := a.tagsInput.Value()
+	if tagsStr != "" {
+		for _, tag := range strings.Split(tagsStr, ",") {
+			tag = strings.TrimSpace(tag)
+			if tag != "" {
+				tags = append(tags, tag)
+			}
+		}
+	}
+
+	// Get or create the selected folder
+	var folderID *string
+	if a.quickAddFolderIdx > 0 && a.quickAddFolderIdx < len(a.quickAddFolders) {
+		folderPath := a.quickAddFolders[a.quickAddFolderIdx]
+		folder, _ := a.store.GetOrCreateFolderByPath(folderPath)
+		if folder != nil {
+			folderID = &folder.ID
+		}
+	}
+
+	// Create and add the bookmark
+	newBookmark := model.NewBookmark(model.NewBookmarkParams{
+		Title:    title,
+		URL:      url,
+		FolderID: folderID,
+		Tags:     tags,
+	})
+	a.store.AddBookmark(newBookmark)
+	a.refreshItems()
+	a.mode = ModeNormal
+	a.setStatus("Bookmark added: " + title)
 	return a, nil
 }
 
@@ -1325,4 +1549,46 @@ func (a App) yankURLToClipboard() (tea.Model, tea.Cmd) {
 // View implements tea.Model.
 func (a App) View() string {
 	return a.renderView()
+}
+
+// buildFolderPaths returns all folder paths in the store.
+func (a *App) buildFolderPaths() []string {
+	paths := []string{"/"}
+	a.collectFolderPaths(&paths, nil, "")
+	return paths
+}
+
+// collectFolderPaths recursively collects all folder paths.
+func (a *App) collectFolderPaths(paths *[]string, parentID *string, prefix string) {
+	folders := a.store.GetFoldersInFolder(parentID)
+	for _, folder := range folders {
+		path := prefix + "/" + folder.Name
+		*paths = append(*paths, path)
+		a.collectFolderPaths(paths, &folder.ID, path)
+	}
+}
+
+// findFolderIndex finds the index of a folder path in quickAddFolders.
+func (a *App) findFolderIndex(path string) int {
+	for i, p := range a.quickAddFolders {
+		if p == path {
+			return i
+		}
+	}
+	// Default to root if not found
+	return 0
+}
+
+// callAICmd returns a tea.Cmd that calls the AI API.
+func (a *App) callAICmd(url string) tea.Cmd {
+	return func() tea.Msg {
+		client, err := ai.NewClient()
+		if err != nil {
+			return aiResponseMsg{err: err}
+		}
+
+		context := ai.BuildContext(a.store)
+		response, err := client.SuggestBookmark(url, context)
+		return aiResponseMsg{response: response, err: err}
+	}
 }
