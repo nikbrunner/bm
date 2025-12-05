@@ -212,9 +212,11 @@ Export bookmarks to standard Netscape bookmark HTML format (compatible with all 
 - [x] Persist changes on exit
 
 ### Phase 4: Search & Sort ✅
-- [x] `/` - Fuzzy filter current folder
-- [x] `s` - Cycle sort modes
+- [x] `/` - Global fuzzy finder (searches all bookmarks/folders)
+- [x] `s` - Cycle sort modes (manual → alpha → created → visited)
 - [x] Sort indicator in UI
+- [x] Fuzzy matching with sahilm/fuzzy library
+- [x] Results + preview pane layout
 
 ### Phase 5: Actions & Polish
 - [ ] `o`/`Enter` - Open URL in default browser

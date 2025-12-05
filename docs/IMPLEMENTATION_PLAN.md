@@ -89,11 +89,11 @@
 | 24 | Alphabetical sort | `s` | :white_check_mark: |
 | 25 | Sort by created date | `s` | :white_check_mark: |
 | 26 | Sort by visited date | `s` | :white_check_mark: |
-| 27 | Filter current folder | `/` | :white_check_mark: |
-| 28 | Live filter while typing | auto | :white_check_mark: |
-| 29 | Case-insensitive filter | auto | :white_check_mark: |
-| 30 | Sort indicator in UI | auto | :white_check_mark: |
-| 31 | Filter indicator in UI | auto | :white_check_mark: |
+| 27 | Global fuzzy finder | `/` | :white_check_mark: |
+| 28 | Fuzzy matching (sahilm/fuzzy) | auto | :white_check_mark: |
+| 29 | Results + preview panes | auto | :white_check_mark: |
+| 30 | Navigate to selected item | Enter | :white_check_mark: |
+| 31 | Sort indicator in UI | auto | :white_check_mark: |
 
 **Tests:** 49 passing (TDD approach)
 
