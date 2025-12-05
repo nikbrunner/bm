@@ -261,115 +261,121 @@ func (a App) renderItem(item Item, selected bool, maxWidth int) string {
 
 // renderFuzzyFinder renders the fuzzy finder overlay.
 func (a App) renderFuzzyFinder() string {
-	// Calculate dimensions
-	width := a.width - 4
-	if width < 60 {
-		width = 60
+	// Use most of the screen
+	modalWidth := a.width - 10
+	if modalWidth < 60 {
+		modalWidth = 60
 	}
-	height := a.height - 4
-	if height < 10 {
-		height = 10
+	if modalWidth > 120 {
+		modalWidth = 120
 	}
 
-	// Input line at top
-	inputLine := "> " + a.searchInput.View()
+	modalHeight := a.height - 6
+	if modalHeight < 15 {
+		modalHeight = 15
+	}
 
-	// Split into results (left) and preview (right)
-	resultsWidth := (width - 4) / 2
-	previewWidth := width - resultsWidth - 4
+	// Content width (accounting for modal padding and border)
+	contentWidth := modalWidth - 6
+
+	// Split content between results and preview
+	resultsWidth := contentWidth * 2 / 3
+	previewWidth := contentWidth - resultsWidth - 2
+
+	// Calculate how many results we can show
+	listHeight := modalHeight - 8 // Account for title, input, help, padding
+	if listHeight < 5 {
+		listHeight = 5
+	}
 
 	// Build results list
 	var results strings.Builder
-	maxResults := height - 6 // Leave room for input and help
-	if maxResults < 3 {
-		maxResults = 3
-	}
-
 	if len(a.fuzzyMatches) == 0 {
 		results.WriteString(a.styles.Empty.Render("No matches"))
 	} else {
 		for i, match := range a.fuzzyMatches {
-			if i >= maxResults {
+			if i >= listHeight {
 				break
 			}
 			isSelected := i == a.fuzzyCursor
-			line := a.renderFuzzyItem(match, isSelected, resultsWidth-2)
+			line := a.renderFuzzyItem(match, isSelected, resultsWidth-4)
 			results.WriteString(line + "\n")
 		}
 	}
 
-	// Build preview pane
+	// Build preview content
 	var preview strings.Builder
 	if len(a.fuzzyMatches) > 0 && a.fuzzyCursor < len(a.fuzzyMatches) {
 		selectedItem := a.fuzzyMatches[a.fuzzyCursor].Item
 		if selectedItem.IsFolder() {
-			preview.WriteString(a.styles.Title.Render("📁 " + selectedItem.Folder.Name))
+			preview.WriteString("📁 " + selectedItem.Folder.Name)
 			preview.WriteString("\n\n")
-			// Show folder contents count
 			folderID := selectedItem.Folder.ID
 			children := a.getItemsForFolder(&folderID)
-			preview.WriteString(a.styles.Date.Render(fmt.Sprintf("%d items", len(children))))
+			preview.WriteString(fmt.Sprintf("%d items", len(children)))
 		} else {
 			b := selectedItem.Bookmark
-			preview.WriteString(a.styles.Title.Render(b.Title))
+			preview.WriteString(b.Title)
 			preview.WriteString("\n\n")
-			// URL
+			// URL (truncate if needed)
 			url := b.URL
-			if len(url) > previewWidth-4 {
-				url = url[:previewWidth-7] + "..."
+			if len(url) > previewWidth-2 {
+				url = url[:previewWidth-5] + "..."
 			}
-			preview.WriteString(a.styles.URL.Render(url))
-			preview.WriteString("\n\n")
-			// Tags
+			preview.WriteString(url)
 			if len(b.Tags) > 0 {
+				preview.WriteString("\n\n")
 				tags := make([]string, len(b.Tags))
 				for i, tag := range b.Tags {
 					tags[i] = "#" + tag
 				}
-				preview.WriteString(a.styles.Tag.Render(strings.Join(tags, " ")))
-				preview.WriteString("\n")
+				preview.WriteString(strings.Join(tags, " "))
 			}
 		}
 	}
 
-	// Style the panes
-	resultsPane := a.styles.PaneActive.
-		Width(resultsWidth).
-		Height(height - 5).
-		Render(strings.TrimRight(results.String(), "\n"))
-
-	previewPane := a.styles.Pane.
-		Width(previewWidth).
-		Height(height - 5).
-		Render(strings.TrimRight(preview.String(), "\n"))
-
-	// Join panes
-	panes := lipgloss.JoinHorizontal(lipgloss.Top, resultsPane, previewPane)
-
-	// Help text
-	help := a.styles.Help.Render("↑/k ↓/j: navigate • Enter: select • Esc: cancel")
-
-	// Build modal content
-	modalContent := lipgloss.JoinVertical(lipgloss.Left,
-		a.styles.Title.Render("Find"),
-		inputLine,
-		"",
-		panes,
-		help,
-	)
-
-	modalStyle := lipgloss.NewStyle().
+	// Simple box styles for the panes
+	resultsStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("#7D56F4")).
-		Padding(1, 2).
-		Width(width)
+		Width(resultsWidth).
+		Height(listHeight)
+
+	previewStyle := lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("#666")).
+		Width(previewWidth).
+		Height(listHeight).
+		Padding(0, 1)
+
+	resultsPane := resultsStyle.Render(strings.TrimRight(results.String(), "\n"))
+	previewPane := previewStyle.Render(strings.TrimRight(preview.String(), "\n"))
+
+	// Join panes horizontally
+	panes := lipgloss.JoinHorizontal(lipgloss.Top, resultsPane, " ", previewPane)
+
+	// Build the modal
+	modalStyle := lipgloss.NewStyle().
+		Border(lipgloss.DoubleBorder()).
+		BorderForeground(lipgloss.Color("#7D56F4")).
+		Padding(1, 2)
+
+	content := lipgloss.JoinVertical(lipgloss.Left,
+		a.styles.Title.Render("Find"),
+		"",
+		"> "+a.searchInput.View(),
+		"",
+		panes,
+		"",
+		a.styles.Help.Render("↑/k ↓/j: navigate • Enter: select • Esc: cancel"),
+	)
 
 	return lipgloss.Place(
 		a.width,
 		a.height,
 		lipgloss.Center,
 		lipgloss.Center,
-		modalStyle.Render(modalContent),
+		modalStyle.Render(content),
 	)
 }
 

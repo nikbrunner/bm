@@ -219,6 +219,25 @@ func (a *App) refreshItems() {
 	}
 }
 
+// buildFolderStack builds the folder stack from root to the given parent folder.
+func (a *App) buildFolderStack(parentID *string) {
+	if parentID == nil {
+		return
+	}
+	// Build path from root to parent
+	var path []string
+	currentID := parentID
+	for currentID != nil {
+		folder := a.store.GetFolderByID(*currentID)
+		if folder == nil {
+			break
+		}
+		path = append([]string{folder.ID}, path...) // prepend
+		currentID = folder.ParentID
+	}
+	a.folderStack = path
+}
+
 // updateFuzzyMatches performs fuzzy matching on allItems with the current query.
 func (a *App) updateFuzzyMatches() {
 	query := a.searchInput.Value()
@@ -485,14 +504,25 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.refreshItems()
 
 		case key.Matches(msg, a.keys.Search):
-			// Open fuzzy finder mode
+			// Open fuzzy finder mode with GLOBAL search
 			a.mode = ModeSearch
 			a.searchInput.Reset()
 			a.searchInput.Focus()
 			a.fuzzyCursor = 0
-			// Store all items for fuzzy matching
-			a.allItems = make([]Item, len(a.items))
-			copy(a.allItems, a.items)
+			// Gather ALL items from the entire store for fuzzy matching
+			a.allItems = []Item{}
+			for i := range a.store.Folders {
+				a.allItems = append(a.allItems, Item{
+					Kind:   ItemFolder,
+					Folder: &a.store.Folders[i],
+				})
+			}
+			for i := range a.store.Bookmarks {
+				a.allItems = append(a.allItems, Item{
+					Kind:     ItemBookmark,
+					Bookmark: &a.store.Bookmarks[i],
+				})
+			}
 			a.updateFuzzyMatches()
 			return a, a.searchInput.Focus()
 		}
@@ -530,14 +560,37 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return a, nil
 
 		case tea.KeyEnter:
-			// Select highlighted item
+			// Select highlighted item and navigate to it
 			if len(a.fuzzyMatches) > 0 && a.fuzzyCursor < len(a.fuzzyMatches) {
 				selectedItem := a.fuzzyMatches[a.fuzzyCursor].Item
-				// Find this item in the main items list and set cursor
-				for i, item := range a.items {
-					if item.ID() == selectedItem.ID() {
-						a.cursor = i
-						break
+
+				if selectedItem.IsFolder() {
+					// Navigate into the selected folder
+					folderID := selectedItem.Folder.ID
+					// Build the folder stack by finding parent chain
+					a.folderStack = []string{}
+					a.buildFolderStack(selectedItem.Folder.ParentID)
+					a.currentFolderID = &folderID
+					a.cursor = 0
+					a.refreshItems()
+				} else {
+					// Navigate to the folder containing this bookmark
+					a.folderStack = []string{}
+					if selectedItem.Bookmark.FolderID != nil {
+						// Find the folder and build stack
+						folder := a.store.GetFolderByID(*selectedItem.Bookmark.FolderID)
+						if folder != nil {
+							a.buildFolderStack(folder.ParentID)
+						}
+					}
+					a.currentFolderID = selectedItem.Bookmark.FolderID
+					a.refreshItems()
+					// Set cursor to the bookmark
+					for i, item := range a.items {
+						if !item.IsFolder() && item.Bookmark.ID == selectedItem.Bookmark.ID {
+							a.cursor = i
+							break
+						}
 					}
 				}
 			}

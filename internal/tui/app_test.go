@@ -1462,7 +1462,7 @@ func TestApp_FuzzyFinder_Navigate(t *testing.T) {
 	}
 }
 
-func TestApp_FuzzyFinder_SelectItem(t *testing.T) {
+func TestApp_FuzzyFinder_SelectFolder(t *testing.T) {
 	store := &model.Store{
 		Folders: []model.Folder{
 			{ID: "f1", Name: "Alpha", ParentID: nil},
@@ -1482,7 +1482,7 @@ func TestApp_FuzzyFinder_SelectItem(t *testing.T) {
 	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyDown})
 	app = updated.(tui.App)
 
-	// Press Enter to select
+	// Press Enter to select - should navigate INTO Beta folder
 	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	app = updated.(tui.App)
 
@@ -1491,9 +1491,9 @@ func TestApp_FuzzyFinder_SelectItem(t *testing.T) {
 		t.Error("expected normal mode after Enter")
 	}
 
-	// Cursor should be on Beta (index 1)
-	if app.Cursor() != 1 {
-		t.Errorf("expected cursor 1 (Beta), got %d", app.Cursor())
+	// Should now be inside Beta folder
+	if app.CurrentFolderID() == nil || *app.CurrentFolderID() != "f2" {
+		t.Error("expected to be inside Beta folder (f2)")
 	}
 
 	// Fuzzy matches should be cleared
@@ -1502,28 +1502,35 @@ func TestApp_FuzzyFinder_SelectItem(t *testing.T) {
 	}
 }
 
-func TestApp_FuzzyFinder_SelectFilteredItem(t *testing.T) {
+func TestApp_FuzzyFinder_SelectBookmark(t *testing.T) {
+	f1 := "f1"
 	store := &model.Store{
 		Folders: []model.Folder{
-			{ID: "f1", Name: "Alpha", ParentID: nil},
-			{ID: "f2", Name: "Beta", ParentID: nil},
-			{ID: "f3", Name: "Gamma", ParentID: nil},
+			{ID: "f1", Name: "Development", ParentID: nil},
 		},
-		Bookmarks: []model.Bookmark{},
+		Bookmarks: []model.Bookmark{
+			{ID: "b1", Title: "TanStack Router", URL: "https://tanstack.com", FolderID: &f1},
+			{ID: "b2", Title: "React Docs", URL: "https://react.dev", FolderID: &f1},
+		},
 	}
 
 	app := tui.NewApp(tui.AppParams{Store: store})
 
-	// Open fuzzy finder and type "Gam" to filter to Gamma
+	// Start at root (folder f1 is visible)
+	if app.CurrentFolderID() != nil {
+		t.Fatal("should start at root")
+	}
+
+	// Open fuzzy finder and search for "TanStack"
 	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
 	app = updated.(tui.App)
 
-	for _, r := range "Gam" {
+	for _, r := range "TanStack" {
 		updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
 		app = updated.(tui.App)
 	}
 
-	// Should have 1 match (Gamma)
+	// Should have 1 match
 	if len(app.FuzzyMatches()) != 1 {
 		t.Fatalf("expected 1 fuzzy match, got %d", len(app.FuzzyMatches()))
 	}
@@ -1532,8 +1539,19 @@ func TestApp_FuzzyFinder_SelectFilteredItem(t *testing.T) {
 	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	app = updated.(tui.App)
 
-	// Cursor should be on Gamma (index 2 in original list)
-	if app.Cursor() != 2 {
-		t.Errorf("expected cursor 2 (Gamma), got %d", app.Cursor())
+	// Should navigate to folder f1 where the bookmark lives
+	if app.CurrentFolderID() == nil || *app.CurrentFolderID() != "f1" {
+		t.Error("expected to be inside Development folder (f1)")
+	}
+
+	// Cursor should be on TanStack Router bookmark
+	if app.Cursor() != 0 {
+		t.Errorf("expected cursor 0 (TanStack Router), got %d", app.Cursor())
+	}
+
+	// Verify it's the right item
+	items := app.Items()
+	if len(items) < 1 || items[app.Cursor()].Bookmark.Title != "TanStack Router" {
+		t.Error("expected cursor to be on TanStack Router bookmark")
 	}
 }
