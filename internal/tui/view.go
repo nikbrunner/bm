@@ -10,8 +10,8 @@ import (
 
 // renderView creates the complete Miller columns view.
 func (a App) renderView() string {
-	// Check if we're in a modal mode
-	if a.mode != ModeNormal {
+	// Check if we're in a modal mode (ModeFilter stays inline, not a modal)
+	if a.mode != ModeNormal && a.mode != ModeFilter {
 		return a.renderModal()
 	}
 
@@ -268,6 +268,11 @@ func (a App) renderModal() string {
 
 	case ModeQuickAddConfirm:
 		return a.renderQuickAddConfirm()
+
+	case ModeFilter:
+		// ModeFilter is handled inline in renderCurrentPane, not as a modal
+		// This case should not be reached
+		return a.renderView()
 	}
 
 	modalContent := a.styles.Title.Render(title.String()) + content.String()
@@ -692,7 +697,12 @@ func (a App) renderHelpBar() string {
 	}
 
 	// Hints line
-	hints := "j/k: move  h/l: nav  m: pin  s: search  /: filter  o: sort  a: add  i: AI add  d: del  ?: help  q: quit"
+	var hints string
+	if a.mode == ModeFilter {
+		hints = "Type to filter • Enter: apply • Esc: cancel • Backspace on empty: clear"
+	} else {
+		hints = "j/k: move  h/l: nav  m: pin  s: search  /: filter  o: sort  a: add  i: AI add  d: del  ?: help  q: quit"
+	}
 
 	// Style without padding for individual lines
 	lineStyle := lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#666666", Dark: "#888888"})
