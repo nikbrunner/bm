@@ -39,6 +39,7 @@ const (
 	ModeQuickAdd        // URL input for AI quick add
 	ModeQuickAddLoading // Waiting for AI response
 	ModeQuickAddConfirm // Review/edit AI suggestion
+	ModeMove            // Move item to different folder
 )
 
 // SortMode represents the current sort mode.
@@ -134,6 +135,12 @@ type App struct {
 	quickAddFolders   []string        // Available folder paths for picker
 	quickAddFolderIdx int             // Selected folder index in picker
 
+	// Move state
+	moveFilterInput    textinput.Model // Filter input for folder search
+	moveFolders        []string        // All folder paths
+	moveFilteredFolders []string       // Filtered folder paths based on search
+	moveFolderIdx      int             // Selected folder index in filtered list
+
 	// Settings
 	confirmDelete bool // true = ask confirmation before delete (default true)
 
@@ -195,6 +202,11 @@ func NewApp(params AppParams) App {
 	quickAddInput.CharLimit = 500
 	quickAddInput.Width = 50
 
+	moveFilterInput := textinput.New()
+	moveFilterInput.Placeholder = "Filter folders..."
+	moveFilterInput.CharLimit = 100
+	moveFilterInput.Width = 40
+
 	app := App{
 		store:           params.Store,
 		keys:            keys,
@@ -211,6 +223,7 @@ func NewApp(params AppParams) App {
 		searchInput:     searchInput,
 		filterInput:     filterInput,
 		quickAddInput:   quickAddInput,
+		moveFilterInput: moveFilterInput,
 		confirmDelete:   true,
 		width:           80,
 		height:          24,
@@ -621,6 +634,30 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 
+		// Handle M - move to folder
+		if key.Matches(msg, a.keys.Move) {
+			a.lastKeyWasG = false
+			displayItems := a.getDisplayItems()
+			if len(displayItems) == 0 || a.cursor >= len(displayItems) {
+				return a, nil
+			}
+			a.mode = ModeMove
+			a.moveFolders = a.buildFolderPaths()
+			a.moveFilteredFolders = a.moveFolders // Start with all folders
+			a.moveFilterInput.Reset()
+			a.moveFilterInput.Focus()
+			// Find current location in folder list
+			item := displayItems[a.cursor]
+			currentPath := "/"
+			if item.IsFolder() && item.Folder.ParentID != nil {
+				currentPath = a.store.GetFolderPath(item.Folder.ParentID)
+			} else if !item.IsFolder() && item.Bookmark.FolderID != nil {
+				currentPath = a.store.GetFolderPath(item.Bookmark.FolderID)
+			}
+			a.moveFolderIdx = a.findMoveFolderIndex(currentPath)
+			return a, a.moveFilterInput.Focus()
+		}
+
 		// Reset sequence flags for any other key
 		a.lastKeyWasG = false
 
@@ -1018,6 +1055,53 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 		return a, nil
+	}
+
+	// Handle move mode (folder picker with filter)
+	if a.mode == ModeMove {
+		switch msg.Type {
+		case tea.KeyEsc:
+			// Cancel move
+			a.mode = ModeNormal
+			return a, nil
+		case tea.KeyEnter:
+			// Execute move if there are filtered results
+			if len(a.moveFilteredFolders) > 0 {
+				a.executeMoveItem()
+			}
+			a.mode = ModeNormal
+			return a, nil
+		case tea.KeyUp, tea.KeyCtrlP:
+			if a.moveFolderIdx > 0 {
+				a.moveFolderIdx--
+			} else if len(a.moveFilteredFolders) > 0 {
+				a.moveFolderIdx = len(a.moveFilteredFolders) - 1
+			}
+			return a, nil
+		case tea.KeyDown, tea.KeyCtrlN:
+			if len(a.moveFilteredFolders) > 0 {
+				a.moveFolderIdx++
+				if a.moveFolderIdx >= len(a.moveFilteredFolders) {
+					a.moveFolderIdx = 0
+				}
+			}
+			return a, nil
+		case tea.KeyTab:
+			// Tab also moves down
+			if len(a.moveFilteredFolders) > 0 {
+				a.moveFolderIdx++
+				if a.moveFolderIdx >= len(a.moveFilteredFolders) {
+					a.moveFolderIdx = 0
+				}
+			}
+			return a, nil
+		}
+
+		// Forward to filter input and update filter
+		var cmd tea.Cmd
+		a.moveFilterInput, cmd = a.moveFilterInput.Update(msg)
+		a.updateMoveFilter()
+		return a, cmd
 	}
 
 	// Handle search mode (fuzzy finder)
@@ -1593,6 +1677,80 @@ func (a *App) confirmDeleteItem() {
 	}
 }
 
+// executeMoveItem moves the current item to the selected folder.
+func (a *App) executeMoveItem() {
+	if a.moveFolderIdx < 0 || a.moveFolderIdx >= len(a.moveFilteredFolders) {
+		return
+	}
+
+	displayItems := a.getDisplayItems()
+	if len(displayItems) == 0 || a.cursor >= len(displayItems) {
+		return
+	}
+
+	item := displayItems[a.cursor]
+	targetPath := a.moveFilteredFolders[a.moveFolderIdx]
+
+	// Resolve target folder ID (nil for root "/")
+	var targetFolderID *string
+	if targetPath != "/" {
+		targetFolder := a.store.GetFolderByPath(targetPath)
+		if targetFolder != nil {
+			targetFolderID = &targetFolder.ID
+		}
+	}
+
+	if item.IsFolder() {
+		folder := a.store.GetFolderByID(item.Folder.ID)
+		if folder == nil {
+			return
+		}
+
+		// Prevent moving folder into itself or its descendants
+		if targetFolderID != nil && a.isFolderDescendant(item.Folder.ID, *targetFolderID) {
+			a.setStatus("Cannot move folder into itself")
+			return
+		}
+
+		folder.ParentID = targetFolderID
+		a.setStatus("Moved: " + folder.Name + " → " + targetPath)
+	} else {
+		bookmark := a.store.GetBookmarkByID(item.Bookmark.ID)
+		if bookmark == nil {
+			return
+		}
+
+		bookmark.FolderID = targetFolderID
+		a.setStatus("Moved: " + bookmark.Title + " → " + targetPath)
+	}
+
+	a.refreshItems()
+	a.refreshPinnedItems()
+
+	// Adjust cursor if needed
+	if a.cursor >= len(a.items) && a.cursor > 0 {
+		a.cursor--
+	}
+}
+
+// isFolderDescendant checks if targetID is the same as or a descendant of folderID.
+func (a *App) isFolderDescendant(folderID, targetID string) bool {
+	if folderID == targetID {
+		return true
+	}
+
+	// Check all descendants of folderID
+	for _, f := range a.store.Folders {
+		if f.ParentID != nil && *f.ParentID == folderID {
+			if a.isFolderDescendant(f.ID, targetID) {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
 // pasteItem pastes the yanked item before or after the cursor.
 func (a *App) pasteItem(before bool) {
 	if a.yankedItem == nil {
@@ -1783,6 +1941,36 @@ func (a *App) findFolderIndex(path string) int {
 	}
 	// Default to root if not found
 	return 0
+}
+
+// findMoveFolderIndex finds the index of a folder path in moveFilteredFolders.
+func (a *App) findMoveFolderIndex(path string) int {
+	for i, p := range a.moveFilteredFolders {
+		if p == path {
+			return i
+		}
+	}
+	// Default to first item if not found
+	return 0
+}
+
+// updateMoveFilter filters moveFolders based on the filter input.
+func (a *App) updateMoveFilter() {
+	query := strings.ToLower(a.moveFilterInput.Value())
+	if query == "" {
+		a.moveFilteredFolders = a.moveFolders
+	} else {
+		a.moveFilteredFolders = nil
+		for _, folder := range a.moveFolders {
+			if strings.Contains(strings.ToLower(folder), query) {
+				a.moveFilteredFolders = append(a.moveFilteredFolders, folder)
+			}
+		}
+	}
+	// Reset index if out of bounds
+	if a.moveFolderIdx >= len(a.moveFilteredFolders) {
+		a.moveFolderIdx = 0
+	}
 }
 
 // callAICmd returns a tea.Cmd that calls the AI API.

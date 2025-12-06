@@ -26,6 +26,7 @@ type KeyMap struct {
 	Filter        key.Binding
 	YankURL       key.Binding
 	Pin           key.Binding
+	Move          key.Binding
 	Help          key.Binding
 	Quit          key.Binding
 }
@@ -120,6 +121,10 @@ func DefaultKeyMap() KeyMap {
 		Pin: key.NewBinding(
 			key.WithKeys("m"),
 			key.WithHelp("m", "pin/unpin"),
+		),
+		Move: key.NewBinding(
+			key.WithKeys("M"),
+			key.WithHelp("M", "move to folder"),
 		),
 		Help: key.NewBinding(
 			key.WithKeys("?"),

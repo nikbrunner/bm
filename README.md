@@ -92,6 +92,7 @@ bm export ~/backup/bookmarks.html     # Export to custom path
 | `d` | Delete |
 | `x` | Cut (delete + buffer) |
 | `p/P` | Paste after/before |
+| `M` | Move to different folder |
 
 ### Other
 

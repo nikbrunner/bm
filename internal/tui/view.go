@@ -288,6 +288,55 @@ func (a App) renderModal() string {
 	case ModeQuickAddConfirm:
 		return a.renderQuickAddConfirm()
 
+	case ModeMove:
+		// Get item being moved
+		displayItems := a.getDisplayItems()
+		var itemName string
+		if a.cursor < len(displayItems) {
+			item := displayItems[a.cursor]
+			if item.IsFolder() {
+				itemName = item.Folder.Name
+			} else {
+				itemName = item.Bookmark.Title
+			}
+		}
+
+		title.WriteString("Move Item\n\n")
+		content.WriteString("Moving: " + itemName + "\n\n")
+
+		// Filter input
+		content.WriteString(a.moveFilterInput.View())
+		content.WriteString("\n\n")
+
+		// Render filtered folder list
+		if len(a.moveFilteredFolders) == 0 {
+			content.WriteString(a.styles.Empty.Render("No matching folders"))
+			content.WriteString("\n")
+		} else {
+			maxVisible := 8
+			start := 0
+			if a.moveFolderIdx >= maxVisible {
+				start = a.moveFolderIdx - maxVisible + 1
+			}
+			end := start + maxVisible
+			if end > len(a.moveFilteredFolders) {
+				end = len(a.moveFilteredFolders)
+			}
+
+			for i := start; i < end; i++ {
+				folder := a.moveFilteredFolders[i]
+				if i == a.moveFolderIdx {
+					content.WriteString(a.styles.ItemSelected.Render("▸ " + folder))
+				} else {
+					content.WriteString("  " + folder)
+				}
+				content.WriteString("\n")
+			}
+		}
+
+		content.WriteString("\n")
+		content.WriteString(a.styles.Help.Render("↑/↓: navigate • Enter: move • Esc: cancel"))
+
 	case ModeFilter:
 		// ModeFilter is handled inline in renderCurrentPane, not as a modal
 		// This case should not be reached
