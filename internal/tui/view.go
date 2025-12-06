@@ -217,8 +217,27 @@ func (a App) renderModal() string {
 		title.WriteString("Edit Tags\n\n")
 		content.WriteString("Tags (comma-separated):\n")
 		content.WriteString(a.tagsInput.View())
-		content.WriteString("\n\n")
-		content.WriteString(a.styles.Help.Render("Enter: save • Esc: cancel"))
+		content.WriteString("\n")
+
+		// Render tag suggestions if any
+		if len(a.tagSuggestions) > 0 {
+			content.WriteString("\n")
+			for i, tag := range a.tagSuggestions {
+				if i == a.tagSuggestionIdx {
+					content.WriteString(a.styles.ItemSelected.Render("▸ " + tag))
+				} else {
+					content.WriteString(a.styles.Help.Render("  " + tag))
+				}
+				content.WriteString("\n")
+			}
+		}
+
+		content.WriteString("\n")
+		helpText := "Enter: save • Esc: cancel"
+		if len(a.tagSuggestions) > 0 {
+			helpText = "Tab: accept • ↑↓: navigate • Enter: save • Esc: cancel"
+		}
+		content.WriteString(a.styles.Help.Render(helpText))
 
 	case ModeConfirmDelete:
 		// Determine action and item type

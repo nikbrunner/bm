@@ -122,6 +122,11 @@ type App struct {
 	editItemID string // ID of item being edited (folder or bookmark)
 	cutMode    bool   // true = cut (buffer), false = delete (no buffer)
 
+	// Tag autocompletion state
+	allTags          []string // All unique tags in store
+	tagSuggestions   []string // Filtered suggestions for current input
+	tagSuggestionIdx int      // Selected suggestion index (-1 = none)
+
 	// Quick add (AI-powered) state
 	quickAddInput     textinput.Model // URL input
 	quickAddResponse  *ai.Response    // AI suggestion
@@ -367,6 +372,84 @@ func (a *App) updateFuzzyMatches() {
 	if a.fuzzyCursor >= len(a.fuzzyMatches) {
 		a.fuzzyCursor = 0
 	}
+}
+
+// collectAllTags gathers all unique tags from bookmarks.
+func (a *App) collectAllTags() {
+	tagSet := make(map[string]bool)
+	for _, b := range a.store.Bookmarks {
+		for _, tag := range b.Tags {
+			tagSet[tag] = true
+		}
+	}
+	a.allTags = make([]string, 0, len(tagSet))
+	for tag := range tagSet {
+		a.allTags = append(a.allTags, tag)
+	}
+	sort.Strings(a.allTags)
+}
+
+// updateTagSuggestions filters suggestions based on current input.
+func (a *App) updateTagSuggestions() {
+	// Get the current word being typed (after the last comma)
+	input := a.tagsInput.Value()
+	lastComma := strings.LastIndex(input, ",")
+	currentWord := input
+	if lastComma >= 0 {
+		currentWord = input[lastComma+1:]
+	}
+	currentWord = strings.TrimSpace(strings.ToLower(currentWord))
+
+	if currentWord == "" {
+		a.tagSuggestions = nil
+		a.tagSuggestionIdx = -1
+		return
+	}
+
+	// Get already-used tags in current input to avoid suggesting them
+	usedTags := make(map[string]bool)
+	for _, part := range strings.Split(input, ",") {
+		usedTags[strings.TrimSpace(strings.ToLower(part))] = true
+	}
+
+	// Filter tags that start with currentWord and aren't already used
+	a.tagSuggestions = nil
+	for _, tag := range a.allTags {
+		tagLower := strings.ToLower(tag)
+		if strings.HasPrefix(tagLower, currentWord) && !usedTags[tagLower] {
+			a.tagSuggestions = append(a.tagSuggestions, tag)
+		}
+	}
+
+	// Reset selection if out of bounds
+	if a.tagSuggestionIdx >= len(a.tagSuggestions) {
+		a.tagSuggestionIdx = -1
+	}
+}
+
+// insertTagSuggestion inserts the selected tag suggestion.
+func (a *App) insertTagSuggestion() {
+	if a.tagSuggestionIdx < 0 || a.tagSuggestionIdx >= len(a.tagSuggestions) {
+		return
+	}
+
+	tag := a.tagSuggestions[a.tagSuggestionIdx]
+	input := a.tagsInput.Value()
+	lastComma := strings.LastIndex(input, ",")
+
+	var newValue string
+	if lastComma >= 0 {
+		// Replace current word with selected tag
+		newValue = input[:lastComma+1] + " " + tag
+	} else {
+		// Replace entire input with selected tag
+		newValue = tag
+	}
+
+	a.tagsInput.SetValue(newValue)
+	a.tagsInput.SetCursor(len(newValue))
+	a.tagSuggestions = nil
+	a.tagSuggestionIdx = -1
 }
 
 // Cursor returns the current cursor position.
@@ -679,6 +762,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Convert tags slice to comma-separated string
 			a.tagsInput.SetValue(strings.Join(item.Bookmark.Tags, ", "))
 			a.tagsInput.Focus()
+			// Initialize tag autocompletion
+			a.collectAllTags()
+			a.tagSuggestions = nil
+			a.tagSuggestionIdx = -1
 			return a, a.tagsInput.Focus()
 
 		case key.Matches(msg, a.keys.Sort):
@@ -1188,7 +1275,40 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	} else if a.mode == ModeAddFolder || a.mode == ModeEditFolder {
 		a.titleInput, cmd = a.titleInput.Update(msg)
 	} else if a.mode == ModeEditTags {
+		// Handle Tab for tag autocompletion
+		if msg.Type == tea.KeyTab {
+			if len(a.tagSuggestions) > 0 {
+				// Cycle through suggestions
+				a.tagSuggestionIdx++
+				if a.tagSuggestionIdx >= len(a.tagSuggestions) {
+					a.tagSuggestionIdx = 0
+				}
+				// Insert selected suggestion
+				a.insertTagSuggestion()
+				return a, nil
+			}
+		}
+
+		// Handle up/down for suggestion navigation
+		if msg.Type == tea.KeyUp && len(a.tagSuggestions) > 0 {
+			if a.tagSuggestionIdx > 0 {
+				a.tagSuggestionIdx--
+			} else {
+				a.tagSuggestionIdx = len(a.tagSuggestions) - 1
+			}
+			return a, nil
+		}
+		if msg.Type == tea.KeyDown && len(a.tagSuggestions) > 0 {
+			a.tagSuggestionIdx++
+			if a.tagSuggestionIdx >= len(a.tagSuggestions) {
+				a.tagSuggestionIdx = 0
+			}
+			return a, nil
+		}
+
+		// Update input and then update suggestions
 		a.tagsInput, cmd = a.tagsInput.Update(msg)
+		a.updateTagSuggestions()
 	}
 
 	return a, cmd
