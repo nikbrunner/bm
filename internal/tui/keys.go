@@ -119,12 +119,12 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("Y", "yank URL"),
 		),
 		Pin: key.NewBinding(
-			key.WithKeys("m"),
-			key.WithHelp("m", "pin/unpin"),
+			key.WithKeys("*"),
+			key.WithHelp("*", "pin/unpin"),
 		),
 		Move: key.NewBinding(
-			key.WithKeys("M"),
-			key.WithHelp("M", "move to folder"),
+			key.WithKeys("m"),
+			key.WithHelp("m", "move to folder"),
 		),
 		Help: key.NewBinding(
 			key.WithKeys("?"),

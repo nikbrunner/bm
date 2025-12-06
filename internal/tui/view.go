@@ -887,11 +887,11 @@ func (a App) renderHelpOverlay() string {
 	left.WriteString(a.styles.Title.Render("act") + "\n")
 	left.WriteString("l    open url\n")
 	left.WriteString("Y    yank url\n")
-	left.WriteString("m    pin/unpin\n")
+	left.WriteString("*    pin/unpin\n")
 	left.WriteString("s    search\n")
 	left.WriteString("/    filter\n")
 	left.WriteString("o    sort\n")
-	left.WriteString("M    move\n")
+	left.WriteString("m    move\n")
 
 	// Right column: Edit
 	var right strings.Builder
