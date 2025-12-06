@@ -755,7 +755,7 @@ func (a App) renderHelpBar() string {
 		SortCreated: "new",
 		SortVisited: "vis",
 	}
-	status.WriteString("[srt:" + sortLabels[a.sortMode] + "]")
+	status.WriteString("[ord:" + sortLabels[a.sortMode] + "]")
 
 	// Confirm mode indicator (abbreviated)
 	if a.confirmDelete {
