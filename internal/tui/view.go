@@ -15,7 +15,8 @@ func (a App) renderView() string {
 		return a.renderModal()
 	}
 
-	paneHeight := a.height - 6 // account for help bar (3 lines), app top padding (1), and pane borders (2)
+	// Calculate pane height: terminal height - app padding (2) - help bar (2) - pane borders (2)
+	paneHeight := a.height - 6
 	if paneHeight < 5 {
 		paneHeight = 5
 	}
@@ -145,20 +146,22 @@ func (a App) renderPinnedPane(width, height int) string {
 
 // renderPinnedItem renders an item in the pinned pane.
 func (a App) renderPinnedItem(item Item, selected bool, maxWidth int) string {
-	var prefix, text string
+	var text, suffix string
+
+	// All pinned items get * prefix
+	prefix := "* "
 
 	if item.IsFolder() {
-		prefix = "★ 📁 "
 		text = item.Title()
+		suffix = "/"
 	} else {
-		prefix = "★ "
 		text = item.Title()
 	}
 
 	// Truncate if too long
-	line := prefix + text
+	line := prefix + text + suffix
 	if len(line) > maxWidth {
-		line = line[:maxWidth-3] + "..."
+		line = prefix + text[:maxWidth-len(prefix)-len(suffix)-3] + "..." + suffix
 	}
 
 	if selected {
@@ -175,9 +178,11 @@ func (a App) renderPinnedItem(item Item, selected bool, maxWidth int) string {
 func (a App) renderModal() string {
 	var title, content strings.Builder
 
+	// Industrial style: thick borders, teal accent
+	accent := lipgloss.AdaptiveColor{Light: "#4A7070", Dark: "#5F8787"}
 	modalStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("#7D56F4")).
+		Border(lipgloss.ThickBorder()).
+		BorderForeground(accent).
 		Padding(1, 2).
 		Width(50)
 
@@ -542,31 +547,28 @@ func (a App) renderPreviewPane(width, height int) string {
 }
 
 func (a App) renderItem(item Item, selected bool, maxWidth int) string {
-	var prefix, text string
+	var prefix, text, suffix string
 	var isPinned bool
 
 	if item.IsFolder() {
 		isPinned = item.Folder.Pinned
 		if isPinned {
-			prefix = "★ 📁 "
-		} else {
-			prefix = "📁 "
+			prefix = "* "
 		}
 		text = item.Title()
+		suffix = "/"
 	} else {
 		isPinned = item.Bookmark.Pinned
 		if isPinned {
-			prefix = "★ "
-		} else {
-			prefix = "   "
+			prefix = "* "
 		}
 		text = item.Title()
 	}
 
 	// Truncate if too long
-	line := prefix + text
+	line := prefix + text + suffix
 	if len(line) > maxWidth {
-		line = line[:maxWidth-3] + "..."
+		line = prefix + text[:maxWidth-len(prefix)-len(suffix)-3] + "..." + suffix
 	}
 
 	if selected {
@@ -619,7 +621,7 @@ func (a App) renderFuzzyFinder() string {
 	if len(a.fuzzyMatches) > 0 && a.fuzzyCursor < len(a.fuzzyMatches) {
 		selectedItem := a.fuzzyMatches[a.fuzzyCursor].Item
 		if selectedItem.IsFolder() {
-			preview.WriteString("📁 " + selectedItem.Folder.Name)
+			preview.WriteString(selectedItem.Folder.Name + "/")
 			preview.WriteString("\n\n")
 			folderID := selectedItem.Folder.ID
 			children := a.getItemsForFolder(&folderID)
@@ -645,6 +647,10 @@ func (a App) renderFuzzyFinder() string {
 		}
 	}
 
+	// Industrial color palette
+	accent := lipgloss.AdaptiveColor{Light: "#4A7070", Dark: "#5F8787"}
+	border := lipgloss.AdaptiveColor{Light: "#888888", Dark: "#505050"}
+
 	// Style for results list
 	resultsStyle := lipgloss.NewStyle().
 		Width(listWidth).
@@ -652,8 +658,8 @@ func (a App) renderFuzzyFinder() string {
 
 	// Style for preview
 	previewStyle := lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("#444")).
+		Border(lipgloss.ThickBorder()).
+		BorderForeground(border).
 		Width(previewWidth).
 		Height(listHeight).
 		Padding(0, 1)
@@ -666,8 +672,8 @@ func (a App) renderFuzzyFinder() string {
 
 	// Build the modal
 	modalStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("#7D56F4")).
+		Border(lipgloss.ThickBorder()).
+		BorderForeground(accent).
 		Padding(1, 2)
 
 	// Result count
@@ -697,18 +703,15 @@ func (a App) renderFuzzyFinder() string {
 
 // renderFuzzyItem renders a single item in the fuzzy results with highlighting.
 func (a App) renderFuzzyItem(match fuzzyMatch, selected bool, maxWidth int) string {
-	var prefix string
+	var suffix string
 	if match.Item.IsFolder() {
-		prefix = "📁 "
-	} else {
-		prefix = "   "
+		suffix = "/"
 	}
 
 	title := match.Item.Title()
 
 	// Build highlighted string
 	var line strings.Builder
-	line.WriteString(prefix)
 
 	// Apply highlighting to matched characters
 	matchSet := make(map[int]bool)
@@ -726,12 +729,13 @@ func (a App) renderFuzzyItem(match fuzzyMatch, selected bool, maxWidth int) stri
 			line.WriteRune(r)
 		}
 	}
+	line.WriteString(suffix)
 
 	result := line.String()
 
 	// Truncate if needed (rough estimate due to ANSI codes)
-	if len(title)+len(prefix) > maxWidth {
-		result = prefix + title[:maxWidth-len(prefix)-3] + "..."
+	if len(title)+len(suffix) > maxWidth {
+		result = title[:maxWidth-len(suffix)-3] + "..." + suffix
 	}
 
 	if selected {
@@ -741,45 +745,49 @@ func (a App) renderFuzzyItem(match fuzzyMatch, selected bool, maxWidth int) stri
 }
 
 func (a App) renderHelpBar() string {
-	// Build status line
+	// Industrial style: abbreviated brackets, minimal
 	var status strings.Builder
 
-	// Sort mode indicator
+	// Sort mode indicator (abbreviated)
 	sortLabels := map[SortMode]string{
-		SortManual:  "manual",
-		SortAlpha:   "A-Z",
-		SortCreated: "created",
-		SortVisited: "visited",
+		SortManual:  "man",
+		SortAlpha:   "a-z",
+		SortCreated: "new",
+		SortVisited: "vis",
 	}
-	status.WriteString("[sort: " + sortLabels[a.sortMode] + "]")
+	status.WriteString("[srt:" + sortLabels[a.sortMode] + "]")
 
-	// Confirm mode indicator
+	// Confirm mode indicator (abbreviated)
 	if a.confirmDelete {
-		status.WriteString(" [confirm: on]")
+		status.WriteString(" [cfm:on]")
 	} else {
-		warnStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Bold(true)
-		status.WriteString(" " + warnStyle.Render("[confirm: off]"))
+		status.WriteString(" [cfm:off]")
 	}
 
-	// Status message (if any)
+	// Help hint
+	status.WriteString(" [?:keys]")
+
+	// Status message (if any) - use accent color
 	if a.statusMessage != "" {
-		statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Bold(true)
+		statusStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.AdaptiveColor{Light: "#4A7070", Dark: "#5F8787"}).
+			Bold(true)
 		status.WriteString("  " + statusStyle.Render(a.statusMessage))
 	}
 
-	// Hints line
+	// Filter mode hint (only when filtering)
 	var hints string
 	if a.mode == ModeFilter {
-		hints = "Type to filter • Enter: apply • Esc: cancel • Backspace on empty: clear"
-	} else {
-		hints = "j/k: move  h/l: nav  m: pin  s: search  /: filter  o: sort  a: add  i: AI add  d: del  ?: help  q: quit"
+		hints = "type to filter · enter: apply · esc: cancel"
 	}
 
-	// Style without padding for individual lines
-	lineStyle := lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#666666", Dark: "#888888"})
+	// Style for status line
+	lineStyle := lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#888888", Dark: "#606060"})
 
-	// Two lines: status on top, hints below
-	content := lineStyle.Render(status.String()) + "\n" + lineStyle.Render(hints)
+	content := lineStyle.Render(status.String())
+	if hints != "" {
+		content += "\n" + lineStyle.Render(hints)
+	}
 
 	// Only pad top, not bottom
 	wrapperStyle := lipgloss.NewStyle().PaddingTop(1)
@@ -793,9 +801,10 @@ func (a App) renderQuickAddConfirm() string {
 		modalWidth = a.width - 10
 	}
 
+	accent := lipgloss.AdaptiveColor{Light: "#4A7070", Dark: "#5F8787"}
 	modalStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("#7D56F4")).
+		Border(lipgloss.ThickBorder()).
+		BorderForeground(accent).
 		Padding(1, 2).
 		Width(modalWidth)
 
@@ -863,66 +872,55 @@ func (a App) renderQuickAddConfirm() string {
 
 // renderHelpOverlay renders the help overlay.
 func (a App) renderHelpOverlay() string {
-	modalWidth := 60
-	if a.width < 70 {
-		modalWidth = a.width - 10
-	}
-
+	// Brutalist style: no border, just raw columns
 	modalStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("#7D56F4")).
-		Padding(1, 2).
-		Width(modalWidth)
+		Padding(1, 2)
 
-	// Build help content
-	var content strings.Builder
-	content.WriteString(a.styles.Title.Render("Keyboard Shortcuts"))
-	content.WriteString("\n\n")
+	// Left column: Navigation + Actions
+	var left strings.Builder
+	left.WriteString(a.styles.Title.Render("nav") + "\n")
+	left.WriteString("j/k  move\n")
+	left.WriteString("h/l  back/fwd\n")
+	left.WriteString("gg   top\n")
+	left.WriteString("G    bottom\n")
+	left.WriteString("\n")
+	left.WriteString(a.styles.Title.Render("act") + "\n")
+	left.WriteString("l    open url\n")
+	left.WriteString("Y    yank url\n")
+	left.WriteString("m    pin/unpin\n")
+	left.WriteString("s    search\n")
+	left.WriteString("/    filter\n")
+	left.WriteString("o    sort\n")
+	left.WriteString("M    move\n")
 
-	// Navigation
-	content.WriteString(a.styles.Tag.Render("Navigation"))
-	content.WriteString("\n")
-	content.WriteString("  j/k       Move down/up\n")
-	content.WriteString("  h/l       Navigate back/forward (l opens bookmarks)\n")
-	content.WriteString("  gg        Jump to top\n")
-	content.WriteString("  G         Jump to bottom\n")
-	content.WriteString("\n")
+	// Right column: Edit
+	var right strings.Builder
+	right.WriteString(a.styles.Title.Render("edit") + "\n")
+	right.WriteString("a    add bookmark\n")
+	right.WriteString("A    add folder\n")
+	right.WriteString("i    AI add\n")
+	right.WriteString("e    edit\n")
+	right.WriteString("t    tags\n")
+	right.WriteString("y    yank\n")
+	right.WriteString("d    delete\n")
+	right.WriteString("x    cut\n")
+	right.WriteString("p/P  paste\n")
+	right.WriteString("c    confirm toggle\n")
+	right.WriteString("\n")
+	right.WriteString(a.styles.Help.Render("[?/q/esc] close"))
 
-	// Actions
-	content.WriteString(a.styles.Tag.Render("Actions"))
-	content.WriteString("\n")
-	content.WriteString("  Enter/l   Open URL in browser\n")
-	content.WriteString("  Y         Yank URL to clipboard\n")
-	content.WriteString("  m         Pin/unpin item\n")
-	content.WriteString("  s         Global search\n")
-	content.WriteString("  /         Filter current folder\n")
-	content.WriteString("  o         Cycle sort mode\n")
-	content.WriteString("  c         Toggle delete confirmations\n")
-	content.WriteString("\n")
+	// Join columns
+	leftCol := lipgloss.NewStyle().Width(18).Render(left.String())
+	rightCol := lipgloss.NewStyle().Width(20).Render(right.String())
+	cols := lipgloss.JoinHorizontal(lipgloss.Top, leftCol, "  ", rightCol)
 
-	// CRUD
-	content.WriteString(a.styles.Tag.Render("Edit"))
-	content.WriteString("\n")
-	content.WriteString("  a         Add bookmark\n")
-	content.WriteString("  A         Add folder\n")
-	content.WriteString("  i         AI quick add\n")
-	content.WriteString("  e         Edit selected\n")
-	content.WriteString("  t         Edit tags\n")
-	content.WriteString("  y         Yank (copy)\n")
-	content.WriteString("  d         Delete\n")
-	content.WriteString("  x         Cut (delete + buffer)\n")
-	content.WriteString("  p/P       Paste after/before\n")
-	content.WriteString("\n")
-
-	// Close
-	content.WriteString(a.styles.Help.Render("Press ? or q or Esc to close"))
-
+	// Top-left aligned, brutalist style
 	return lipgloss.Place(
 		a.width,
 		a.height,
-		lipgloss.Center,
-		lipgloss.Center,
-		modalStyle.Render(content.String()),
+		lipgloss.Left,
+		lipgloss.Top,
+		modalStyle.Render(cols),
 	)
 }
 

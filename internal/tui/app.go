@@ -136,10 +136,10 @@ type App struct {
 	quickAddFolderIdx int             // Selected folder index in picker
 
 	// Move state
-	moveFilterInput    textinput.Model // Filter input for folder search
-	moveFolders        []string        // All folder paths
-	moveFilteredFolders []string       // Filtered folder paths based on search
-	moveFolderIdx      int             // Selected folder index in filtered list
+	moveFilterInput     textinput.Model // Filter input for folder search
+	moveFolders         []string        // All folder paths
+	moveFilteredFolders []string        // Filtered folder paths based on search
+	moveFolderIdx       int             // Selected folder index in filtered list
 
 	// Settings
 	confirmDelete bool // true = ask confirmation before delete (default true)

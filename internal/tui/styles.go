@@ -20,11 +20,13 @@ type Styles struct {
 }
 
 // DefaultStyles returns the default style configuration.
+// Industrial design: grayscale with single desaturated teal accent.
 func DefaultStyles() Styles {
-	subtle := lipgloss.AdaptiveColor{Light: "#666666", Dark: "#888888"}
-	highlight := lipgloss.AdaptiveColor{Light: "#874BFD", Dark: "#7D56F4"}
-	folder := lipgloss.AdaptiveColor{Light: "#1E90FF", Dark: "#87CEEB"}
-	tag := lipgloss.AdaptiveColor{Light: "#228B22", Dark: "#90EE90"}
+	// Industrial color palette
+	primary := lipgloss.AdaptiveColor{Light: "#505050", Dark: "#A0A0A0"} // main text
+	subtle := lipgloss.AdaptiveColor{Light: "#888888", Dark: "#606060"}  // secondary text
+	accent := lipgloss.AdaptiveColor{Light: "#4A7070", Dark: "#5F8787"}  // desaturated teal
+	border := lipgloss.AdaptiveColor{Light: "#888888", Dark: "#505050"}  // inactive borders
 
 	return Styles{
 		App: lipgloss.NewStyle().
@@ -33,38 +35,39 @@ func DefaultStyles() Styles {
 			PaddingRight(2),
 
 		Pane: lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(subtle).
+			Border(lipgloss.ThickBorder()).
+			BorderForeground(border).
 			Padding(0, 1),
 
 		PaneActive: lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(highlight).
+			Border(lipgloss.ThickBorder()).
+			BorderForeground(accent).
 			Padding(0, 1),
 
 		Title: lipgloss.NewStyle().
 			Bold(true).
-			Foreground(highlight),
+			Foreground(accent),
 
 		Item: lipgloss.NewStyle().
+			Foreground(primary).
 			PaddingLeft(1),
 
 		ItemSelected: lipgloss.NewStyle().
 			PaddingLeft(1).
-			Background(highlight).
-			Foreground(lipgloss.Color("#FFFFFF")),
+			Background(accent).
+			Foreground(lipgloss.Color("#1A1A1A")),
 
 		Folder: lipgloss.NewStyle().
-			Foreground(folder),
+			Foreground(primary),
 
-		Bookmark: lipgloss.NewStyle(),
+		Bookmark: lipgloss.NewStyle().
+			Foreground(primary),
 
 		URL: lipgloss.NewStyle().
-			Foreground(subtle).
-			Italic(true),
+			Foreground(subtle),
 
 		Tag: lipgloss.NewStyle().
-			Foreground(tag),
+			Foreground(subtle),
 
 		Date: lipgloss.NewStyle().
 			Foreground(subtle),
@@ -74,7 +77,6 @@ func DefaultStyles() Styles {
 			Padding(1, 0),
 
 		Empty: lipgloss.NewStyle().
-			Foreground(subtle).
-			Italic(true),
+			Foreground(subtle),
 	}
 }
