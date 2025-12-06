@@ -15,7 +15,7 @@ func (a App) renderView() string {
 		return a.renderModal()
 	}
 
-	paneHeight := a.height - 5 // account for help bar (3 lines), app top padding (1), and borders
+	paneHeight := a.height - 6 // account for help bar (3 lines), app top padding (1), and pane borders (2)
 	if paneHeight < 5 {
 		paneHeight = 5
 	}
@@ -84,9 +84,12 @@ func (a App) renderView() string {
 	// Add help bar at bottom
 	helpBar := a.renderHelpBar()
 
-	return a.styles.App.Render(
+	content := a.styles.App.Render(
 		lipgloss.JoinVertical(lipgloss.Left, columns, helpBar),
 	)
+
+	// Use Place to ensure exact terminal dimensions and prevent overflow
+	return lipgloss.Place(a.width, a.height, lipgloss.Left, lipgloss.Top, content)
 }
 
 // renderPinnedPane renders the leftmost pane with pinned items.
