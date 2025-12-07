@@ -170,8 +170,6 @@ func (a App) renderModal() string {
 		title.WriteString("Add Folder\n\n")
 		content.WriteString("Name:\n")
 		content.WriteString(a.modal.TitleInput.View())
-		content.WriteString("\n\n")
-		content.WriteString(a.styles.Help.Render("Enter: save • Esc: cancel"))
 
 	case ModeAddBookmark:
 		title.WriteString("Add Bookmark\n\n")
@@ -180,15 +178,11 @@ func (a App) renderModal() string {
 		content.WriteString("\n\n")
 		content.WriteString("URL:\n")
 		content.WriteString(a.modal.URLInput.View())
-		content.WriteString("\n\n")
-		content.WriteString(a.styles.Help.Render("Tab: switch field • Enter: save • Esc: cancel"))
 
 	case ModeEditFolder:
 		title.WriteString("Edit Folder\n\n")
 		content.WriteString("Name:\n")
 		content.WriteString(a.modal.TitleInput.View())
-		content.WriteString("\n\n")
-		content.WriteString(a.styles.Help.Render("Enter: save • Esc: cancel"))
 
 	case ModeEditBookmark:
 		title.WriteString("Edit Bookmark\n\n")
@@ -197,8 +191,6 @@ func (a App) renderModal() string {
 		content.WriteString("\n\n")
 		content.WriteString("URL:\n")
 		content.WriteString(a.modal.URLInput.View())
-		content.WriteString("\n\n")
-		content.WriteString(a.styles.Help.Render("Tab: switch field • Enter: save • Esc: cancel"))
 
 	case ModeEditTags:
 		title.WriteString("Edit Tags\n\n")
@@ -218,13 +210,6 @@ func (a App) renderModal() string {
 				content.WriteString("\n")
 			}
 		}
-
-		content.WriteString("\n")
-		helpText := "Enter: save • Esc: cancel"
-		if len(a.modal.TagSuggestions) > 0 {
-			helpText = "Tab: accept • ↑↓: navigate • Enter: save • Esc: cancel"
-		}
-		content.WriteString(a.styles.Help.Render(helpText))
 
 	case ModeConfirmDelete:
 		// Determine action and item type
@@ -247,8 +232,7 @@ func (a App) renderModal() string {
 		}
 
 		title.WriteString(action + " " + itemType + "?\n\n")
-		content.WriteString("Are you sure you want to " + strings.ToLower(action) + " \"" + itemName + "\"?\n\n")
-		content.WriteString(a.styles.Help.Render("Enter: confirm • Esc: cancel"))
+		content.WriteString("Are you sure you want to " + strings.ToLower(action) + " \"" + itemName + "\"?")
 
 	case ModeSearch:
 		// Render full-screen fuzzy finder
@@ -262,15 +246,11 @@ func (a App) renderModal() string {
 		title.WriteString("AI Quick Add\n\n")
 		content.WriteString("URL:\n")
 		content.WriteString(a.quickAdd.Input.View())
-		content.WriteString("\n\n")
-		content.WriteString(a.styles.Help.Render("Enter: analyze • Esc: cancel"))
 
 	case ModeQuickAddLoading:
 		title.WriteString("AI Quick Add\n\n")
 		content.WriteString("Analyzing link...\n\n")
 		content.WriteString(a.styles.Empty.Render("Please wait while AI suggests title, folder, and tags"))
-		content.WriteString("\n\n")
-		content.WriteString(a.styles.Help.Render("Esc: cancel"))
 
 	case ModeQuickAddConfirm:
 		return a.renderQuickAddConfirm()
@@ -314,9 +294,6 @@ func (a App) renderModal() string {
 			}
 		}
 
-		content.WriteString("\n")
-		content.WriteString(a.styles.Help.Render("↑/↓: navigate • Enter: move • Esc: cancel"))
-
 	case ModeFilter:
 		// ModeFilter is handled inline in renderCurrentPane, not as a modal
 		// This case should not be reached
@@ -325,13 +302,16 @@ func (a App) renderModal() string {
 
 	modalContent := a.styles.Title.Render(title.String()) + content.String()
 
-	return lipgloss.Place(
+	// Place modal in center, then add help bar at bottom
+	modal := lipgloss.Place(
 		a.width,
-		a.height,
+		a.height-3, // Leave room for help bar
 		lipgloss.Center,
 		lipgloss.Center,
 		modalStyle.Render(modalContent),
 	)
+
+	return lipgloss.JoinVertical(lipgloss.Left, modal, a.renderHelpBar())
 }
 
 func (a App) renderParentPane(width, height int) string {
@@ -628,18 +608,18 @@ func (a App) renderFuzzyFinder() string {
 		"> "+a.search.Input.Value()+"█",
 		"",
 		panes,
-		"",
-		a.styles.Help.Render("j/k: move  Enter: open  Esc: cancel"),
 	)
 
-	// Top-left aligned, brutalist style
-	return lipgloss.Place(
+	// Top-left aligned, leave room for help bar at bottom
+	main := lipgloss.Place(
 		a.width,
-		a.height,
+		a.height-3,
 		lipgloss.Left,
 		lipgloss.Top,
 		contentStyle.Render(content),
 	)
+
+	return lipgloss.JoinVertical(lipgloss.Left, main, a.renderHelpBar())
 }
 
 // renderFuzzyItem renders a single item in the fuzzy results with highlighting.
@@ -663,9 +643,10 @@ func (a App) renderFuzzyItem(match fuzzyMatch, selected bool, maxWidth int) stri
 	for i, r := range title {
 		if matchSet[i] {
 			// Highlight matched character (bold/underline)
+			// Use \033[22;24m to reset only bold/underline, preserving background color
 			line.WriteString("\033[1;4m")
 			line.WriteRune(r)
-			line.WriteString("\033[0m")
+			line.WriteString("\033[22;24m")
 		} else {
 			line.WriteRune(r)
 		}
@@ -679,6 +660,12 @@ func (a App) renderFuzzyItem(match fuzzyMatch, selected bool, maxWidth int) stri
 		result = layout.TruncateANSIAware(result, maxWidth, a.layoutConfig.Text)
 	}
 
+	// Pad to full width for consistent selection highlighting
+	visibleLen := layout.VisibleLength(result)
+	if visibleLen < maxWidth {
+		result += strings.Repeat(" ", maxWidth-visibleLen)
+	}
+
 	if selected {
 		return a.styles.ItemSelected.Render(result)
 	}
@@ -686,7 +673,64 @@ func (a App) renderFuzzyItem(match fuzzyMatch, selected bool, maxWidth int) stri
 }
 
 func (a App) renderHelpBar() string {
-	// Industrial style: abbreviated brackets, minimal
+	lineStyle := lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#888888", Dark: "#606060"})
+
+	var lines []string
+
+	// Line 1: Message (if any)
+	if a.messageText != "" {
+		lines = append(lines, a.renderMessageLine())
+	}
+
+	// Line 2: Toggle states (only in normal/filter modes)
+	if a.mode == ModeNormal || a.mode == ModeFilter {
+		lines = append(lines, lineStyle.Render(a.renderStatusToggles()))
+	}
+
+	// Line 3: Contextual keyboard hints
+	hintsStr := a.renderHints(a.getContextualHints())
+	if hintsStr != "" {
+		lines = append(lines, lineStyle.Render(hintsStr))
+	}
+
+	// Only pad top, not bottom
+	wrapperStyle := lipgloss.NewStyle().PaddingTop(1)
+	return wrapperStyle.Render(strings.Join(lines, "\n"))
+}
+
+// renderMessageLine renders the styled message with prefix icon based on type.
+func (a App) renderMessageLine() string {
+	var msgStyle lipgloss.Style
+	var prefix string
+
+	switch a.messageType {
+	case MessageError:
+		msgStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.AdaptiveColor{Light: "#CC3333", Dark: "#FF6666"}).
+			Bold(true)
+		prefix = "✗ "
+	case MessageWarning:
+		msgStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.AdaptiveColor{Light: "#CC8800", Dark: "#FFAA00"}).
+			Bold(true)
+		prefix = "⚠ "
+	case MessageSuccess:
+		msgStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.AdaptiveColor{Light: "#338833", Dark: "#66CC66"}).
+			Bold(true)
+		prefix = "✓ "
+	default: // MessageInfo
+		msgStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.AdaptiveColor{Light: "#4A7070", Dark: "#5F8787"}).
+			Bold(true)
+		prefix = ""
+	}
+
+	return msgStyle.Render(prefix + a.messageText)
+}
+
+// renderStatusToggles renders the [ord:X] [cfm:X] indicators.
+func (a App) renderStatusToggles() string {
 	var status strings.Builder
 
 	// Sort mode indicator (abbreviated)
@@ -705,50 +749,21 @@ func (a App) renderHelpBar() string {
 		status.WriteString(" [cfm:off]")
 	}
 
-	// Help hint
-	status.WriteString(" [?:keys]")
+	return status.String()
+}
 
-	// Message (if any) - style based on type
-	if a.messageText != "" {
-		var msgStyle lipgloss.Style
-		switch a.messageType {
-		case MessageError:
-			msgStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.AdaptiveColor{Light: "#CC3333", Dark: "#FF6666"}).
-				Bold(true)
-		case MessageWarning:
-			msgStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.AdaptiveColor{Light: "#CC8800", Dark: "#FFAA00"}).
-				Bold(true)
-		case MessageSuccess:
-			msgStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.AdaptiveColor{Light: "#338833", Dark: "#66CC66"}).
-				Bold(true)
-		default: // MessageInfo or MessageNone
-			msgStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.AdaptiveColor{Light: "#4A7070", Dark: "#5F8787"}).
-				Bold(true)
-		}
-		status.WriteString("  " + msgStyle.Render(a.messageText))
+// renderHints formats a HintSet for display as "key:desc key:desc ...".
+func (a App) renderHints(hints HintSet) string {
+	allHints := hints.All()
+	if len(allHints) == 0 {
+		return ""
 	}
 
-	// Filter mode hint (only when filtering)
-	var hints string
-	if a.mode == ModeFilter {
-		hints = "type to filter · enter: apply · esc: cancel"
+	parts := make([]string, len(allHints))
+	for i, h := range allHints {
+		parts[i] = h.Key + ":" + h.Desc
 	}
-
-	// Style for status line
-	lineStyle := lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#888888", Dark: "#606060"})
-
-	content := lineStyle.Render(status.String())
-	if hints != "" {
-		content += "\n" + lineStyle.Render(hints)
-	}
-
-	// Only pad top, not bottom
-	wrapperStyle := lipgloss.NewStyle().PaddingTop(1)
-	return wrapperStyle.Render(content)
+	return strings.Join(parts, " ")
 }
 
 // renderQuickAddConfirm renders the AI quick add confirmation modal.
@@ -804,17 +819,17 @@ func (a App) renderQuickAddConfirm() string {
 	}
 	content.WriteString(tagsLabel + "\n")
 	content.WriteString(a.modal.TagsInput.View())
-	content.WriteString("\n\n")
 
-	content.WriteString(a.styles.Help.Render("Tab: next field • j/k: folder • Enter: save • Esc: cancel"))
-
-	return lipgloss.Place(
+	// Place modal in center, then add help bar at bottom
+	modal := lipgloss.Place(
 		a.width,
-		a.height,
+		a.height-3,
 		lipgloss.Center,
 		lipgloss.Center,
 		modalStyle.Render(content.String()),
 	)
+
+	return lipgloss.JoinVertical(lipgloss.Left, modal, a.renderHelpBar())
 }
 
 // renderHelpOverlay renders the help overlay.

@@ -2,6 +2,7 @@
                                                                                 
                                                                                 
                                                                                 
+                                                                                
               ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓              
               ┃                                                  ┃              
               ┃  Add Bookmark                                    ┃              
@@ -12,13 +13,11 @@
               ┃  URL:                                            ┃              
               ┃  > URL                                           ┃              
               ┃                                                  ┃              
-              ┃                                                  ┃              
-              ┃  Tab: switch field • Enter: save • Esc: cancel   ┃              
-              ┃                                                  ┃              
-              ┃                                                  ┃              
               ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛              
                                                                                 
                                                                                 
                                                                                 
                                                                                 
                                                                                 
+                                                                                
+Tab:next Enter:save Esc:cancel                                                  

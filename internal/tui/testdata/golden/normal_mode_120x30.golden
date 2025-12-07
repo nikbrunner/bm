@@ -26,5 +26,5 @@
   ┃                                     ┃┃                                     ┃┃                                     ┃  
   ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛  
                                                                                                                          
-  [ord:man] [cfm:on] [?:keys]                                                                                            
-                                                                                                                         
+  [ord:man] [cfm:on]                                                                                                     
+  j/k:move h:back l:open s:search /:filter a:add e:edit d:del ?:help q:quit                                              

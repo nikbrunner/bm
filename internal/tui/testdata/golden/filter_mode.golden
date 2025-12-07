@@ -20,5 +20,5 @@
   ┃                        ┃┃                        ┃┃                        ┃  
   ┗━━━━━━━━━━━━━━━━━━━━━━━━┛┗━━━━━━━━━━━━━━━━━━━━━━━━┛┗━━━━━━━━━━━━━━━━━━━━━━━━┛  
                                                                                   
-  [ord:man] [cfm:on] [?:keys]                                                     
-  type to filter · enter: apply · esc: cancel                                     
+  [ord:man] [cfm:on]                                                              
+  type:filter Enter:apply Esc:cancel                                              

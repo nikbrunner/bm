@@ -11,10 +11,6 @@
               ┃                Are you sure you want to delete   ┃              
               ┃  "Development"?                                  ┃              
               ┃                                                  ┃              
-              ┃                                                  ┃              
-              ┃  Enter: confirm • Esc: cancel                    ┃              
-              ┃                                                  ┃              
-              ┃                                                  ┃              
               ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛              
                                                                                 
                                                                                 
@@ -22,3 +18,6 @@
                                                                                 
                                                                                 
                                                                                 
+                                                                                
+                                                                                
+Enter:confirm Esc:cancel                                                        
