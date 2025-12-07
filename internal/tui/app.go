@@ -475,6 +475,14 @@ func (a App) MessageType() MessageType {
 	return a.messageType
 }
 
+// WithDimensions returns a copy of the App with the specified dimensions.
+// This is primarily used for testing with fixed terminal sizes.
+func (a App) WithDimensions(width, height int) App {
+	a.width = width
+	a.height = height
+	return a
+}
+
 // setMessage sets a status message with the given type.
 // Returns a command to auto-clear the message after messageDuration.
 func (a *App) setMessage(t MessageType, msg string) tea.Cmd {
