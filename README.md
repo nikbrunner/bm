@@ -127,6 +127,33 @@ Bookmarks are stored in `~/.config/bm/bookmarks.json`:
 
 The file is human-readable and can be version-controlled.
 
+## Development
+
+### Building & Testing
+
+```bash
+make build          # Build the binary
+make test           # Run all tests (including visual snapshots)
+make check          # Run fmt, lint, and test
+make help           # Show all available targets
+```
+
+### Visual Snapshot Tests
+
+The TUI has visual snapshot tests that capture rendered output as golden files. These tests verify both layout and interaction behavior.
+
+```bash
+make test                    # Runs all tests including snapshots
+make test-update-golden      # Update golden files after intentional UI changes
+```
+
+Golden files are stored in `internal/tui/testdata/golden/` and are human-readable (ANSI codes stripped).
+
+**When to update golden files:**
+- After intentionally changing the UI layout or styling
+- After adding new UI elements or modals
+- After changing keybind displays or status bar content
+
 ## License
 
 MIT
