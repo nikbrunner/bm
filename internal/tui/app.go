@@ -61,6 +61,33 @@ const (
 	PaneBrowser                    // Miller column browser pane
 )
 
+// MessageType represents the type of status message.
+type MessageType int
+
+const (
+	MessageNone    MessageType = iota // no message
+	MessageInfo                       // informational (dim)
+	MessageSuccess                    // success (green)
+	MessageWarning                    // warning (yellow)
+	MessageError                      // error (red)
+)
+
+// messageClearMsg is sent when the message timeout expires.
+type messageClearMsg struct{}
+
+// openURLErrorMsg is sent when opening a URL fails.
+type openURLErrorMsg struct {
+	err error
+}
+
+// clipboardErrorMsg is sent when clipboard operation fails.
+type clipboardErrorMsg struct {
+	err error
+}
+
+// messageDuration is how long messages are displayed before auto-clearing.
+const messageDuration = 3 * time.Second
+
 // fuzzyMatch represents a fuzzy search match with highlighting info.
 type fuzzyMatch struct {
 	Item           Item
@@ -146,8 +173,9 @@ type App struct {
 	// Settings
 	confirmDelete bool // true = ask confirmation before delete (default true)
 
-	// Status message (for user feedback)
-	statusMessage string
+	// Message display (for user feedback)
+	messageType MessageType // type determines styling
+	messageText string      // the message content
 
 	// Window dimensions
 	width  int
@@ -509,14 +537,36 @@ func (a App) FilterQuery() string {
 	return a.filterQuery
 }
 
-// StatusMessage returns the current status message.
+// StatusMessage returns the current status message text.
 func (a App) StatusMessage() string {
-	return a.statusMessage
+	return a.messageText
 }
 
-// setStatus sets the status message.
+// MessageType returns the current message type.
+func (a App) MessageType() MessageType {
+	return a.messageType
+}
+
+// setMessage sets a status message with the given type.
+// Returns a command to auto-clear the message after messageDuration.
+func (a *App) setMessage(t MessageType, msg string) tea.Cmd {
+	a.messageType = t
+	a.messageText = msg
+	return tea.Tick(messageDuration, func(time.Time) tea.Msg {
+		return messageClearMsg{}
+	})
+}
+
+// clearMessage clears the current message.
+func (a *App) clearMessage() {
+	a.messageType = MessageNone
+	a.messageText = ""
+}
+
+// setStatus sets an info message (convenience wrapper for compatibility).
 func (a *App) setStatus(msg string) {
-	a.statusMessage = msg
+	a.messageType = MessageInfo
+	a.messageText = msg
 }
 
 // SetConfirmDelete sets the confirmDelete flag (for testing).
@@ -546,6 +596,26 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.width = msg.Width
 		a.height = msg.Height
 		return a, nil
+
+	case messageClearMsg:
+		// Auto-clear message after timeout
+		a.clearMessage()
+		return a, nil
+
+	case openURLErrorMsg:
+		// Failed to open URL in browser
+		cmd := a.setMessage(MessageError, "Failed to open URL: "+msg.err.Error())
+		return a, cmd
+
+	case clipboardErrorMsg:
+		// Failed to write to clipboard
+		cmd := a.setMessage(MessageError, "Failed to copy to clipboard: "+msg.err.Error())
+		return a, cmd
+
+	case clipboardSuccessMsg:
+		// Successfully copied to clipboard
+		cmd := a.setMessage(MessageSuccess, "URL copied to clipboard")
+		return a, cmd
 
 	case aiResponseMsg:
 		// Handle AI response for quick add
@@ -639,8 +709,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle m - toggle pin
 		if key.Matches(msg, a.keys.Pin) {
 			a.lastKeyWasG = false
-			a.togglePinCurrentItem()
-			return a, nil
+			cmd := a.togglePinCurrentItem()
+			return a, cmd
 		}
 
 		// Handle M - move to folder
@@ -679,13 +749,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(displayItems) > 0 && a.cursor < len(displayItems)-1 {
 				a.cursor++
 			}
-			a.statusMessage = "" // Clear status on navigation
+			a.clearMessage() // Clear message on navigation
 
 		case key.Matches(msg, a.keys.Up):
 			if a.cursor > 0 {
 				a.cursor--
 			}
-			a.statusMessage = "" // Clear status on navigation
+			a.clearMessage() // Clear message on navigation
 
 		case key.Matches(msg, a.keys.Bottom):
 			displayItems := a.getDisplayItems()
@@ -884,22 +954,22 @@ func (a App) updatePinnedPane(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Handle d - unpin (in pinned pane, d just unpins, doesn't delete)
 	if key.Matches(msg, a.keys.Delete) {
 		a.lastKeyWasG = false
-		a.unpinSelectedItem()
-		return a, nil
+		cmd := a.unpinSelectedItem()
+		return a, cmd
 	}
 
 	// Handle x - unpin (same as d in pinned pane)
 	if key.Matches(msg, a.keys.Cut) {
 		a.lastKeyWasG = false
-		a.unpinSelectedItem()
-		return a, nil
+		cmd := a.unpinSelectedItem()
+		return a, cmd
 	}
 
 	// Handle m - unpin
 	if key.Matches(msg, a.keys.Pin) {
 		a.lastKeyWasG = false
-		a.unpinSelectedItem()
-		return a, nil
+		cmd := a.unpinSelectedItem()
+		return a, cmd
 	}
 
 	a.lastKeyWasG = false
@@ -912,13 +982,13 @@ func (a App) updatePinnedPane(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(a.pinnedItems) > 0 && a.pinnedCursor < len(a.pinnedItems)-1 {
 			a.pinnedCursor++
 		}
-		a.statusMessage = ""
+		a.clearMessage()
 
 	case key.Matches(msg, a.keys.Up):
 		if a.pinnedCursor > 0 {
 			a.pinnedCursor--
 		}
-		a.statusMessage = ""
+		a.clearMessage()
 
 	case key.Matches(msg, a.keys.Bottom):
 		if len(a.pinnedItems) > 0 {
@@ -978,18 +1048,26 @@ func (a *App) activatePinnedItem() (tea.Model, tea.Cmd) {
 }
 
 // unpinSelectedItem unpins the currently selected item in the pinned pane.
-func (a *App) unpinSelectedItem() {
+// Returns a command to schedule message auto-clear.
+func (a *App) unpinSelectedItem() tea.Cmd {
 	item := a.selectedPinnedItem()
 	if item == nil {
-		return
+		return nil
 	}
 
+	var cmd tea.Cmd
 	if item.IsFolder() {
-		_ = a.store.TogglePinFolder(item.Folder.ID)
-		a.statusMessage = "Unpinned: " + item.Folder.Name
+		if err := a.store.TogglePinFolder(item.Folder.ID); err != nil {
+			cmd = a.setMessage(MessageError, "Failed to unpin: "+err.Error())
+		} else {
+			cmd = a.setMessage(MessageSuccess, "Unpinned: "+item.Folder.Name)
+		}
 	} else {
-		_ = a.store.TogglePinBookmark(item.Bookmark.ID)
-		a.statusMessage = "Unpinned: " + item.Bookmark.Title
+		if err := a.store.TogglePinBookmark(item.Bookmark.ID); err != nil {
+			cmd = a.setMessage(MessageError, "Failed to unpin: "+err.Error())
+		} else {
+			cmd = a.setMessage(MessageSuccess, "Unpinned: "+item.Bookmark.Title)
+		}
 	}
 
 	a.refreshPinnedItems()
@@ -998,36 +1076,43 @@ func (a *App) unpinSelectedItem() {
 	if a.pinnedCursor >= len(a.pinnedItems) && a.pinnedCursor > 0 {
 		a.pinnedCursor--
 	}
+
+	return cmd
 }
 
 // togglePinCurrentItem toggles pin on the currently selected item in browser pane.
-func (a *App) togglePinCurrentItem() {
+// Returns a command to schedule message auto-clear.
+func (a *App) togglePinCurrentItem() tea.Cmd {
 	displayItems := a.getDisplayItems()
 	if len(displayItems) == 0 || a.cursor >= len(displayItems) {
-		return
+		return nil
 	}
 
+	var cmd tea.Cmd
 	item := displayItems[a.cursor]
 	if item.IsFolder() {
 		wasPinned := item.Folder.Pinned
-		_ = a.store.TogglePinFolder(item.Folder.ID)
-		if wasPinned {
-			a.statusMessage = "Unpinned: " + item.Folder.Name
+		if err := a.store.TogglePinFolder(item.Folder.ID); err != nil {
+			cmd = a.setMessage(MessageError, "Failed to toggle pin: "+err.Error())
+		} else if wasPinned {
+			cmd = a.setMessage(MessageSuccess, "Unpinned: "+item.Folder.Name)
 		} else {
-			a.statusMessage = "Pinned: " + item.Folder.Name
+			cmd = a.setMessage(MessageSuccess, "Pinned: "+item.Folder.Name)
 		}
 	} else {
 		wasPinned := item.Bookmark.Pinned
-		_ = a.store.TogglePinBookmark(item.Bookmark.ID)
-		if wasPinned {
-			a.statusMessage = "Unpinned: " + item.Bookmark.Title
+		if err := a.store.TogglePinBookmark(item.Bookmark.ID); err != nil {
+			cmd = a.setMessage(MessageError, "Failed to toggle pin: "+err.Error())
+		} else if wasPinned {
+			cmd = a.setMessage(MessageSuccess, "Unpinned: "+item.Bookmark.Title)
 		} else {
-			a.statusMessage = "Pinned: " + item.Bookmark.Title
+			cmd = a.setMessage(MessageSuccess, "Pinned: "+item.Bookmark.Title)
 		}
 	}
 
 	a.refreshItems()
 	a.refreshPinnedItems()
+	return cmd
 }
 
 // updateModal handles key events when in a modal mode.
@@ -1846,7 +1931,9 @@ func openURLCmd(url string) tea.Cmd {
 			openCmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
 		}
 		if openCmd != nil {
-			_ = openCmd.Start()
+			if err := openCmd.Start(); err != nil {
+				return openURLErrorMsg{err: err}
+			}
 		}
 		return nil
 	}
@@ -1875,6 +1962,9 @@ func (a App) openBookmark() (tea.Model, tea.Cmd) {
 	return a, openURLCmd(item.Bookmark.URL)
 }
 
+// clipboardSuccessMsg is sent when clipboard write succeeds.
+type clipboardSuccessMsg struct{}
+
 // yankURLToClipboard copies the selected bookmark URL to system clipboard.
 func (a App) yankURLToClipboard() (tea.Model, tea.Cmd) {
 	displayItems := a.getDisplayItems()
@@ -1888,10 +1978,11 @@ func (a App) yankURLToClipboard() (tea.Model, tea.Cmd) {
 	}
 
 	url := item.Bookmark.URL
-	a.setStatus("URL copied to clipboard")
 	cmd := func() tea.Msg {
-		_ = clipboard.WriteAll(url)
-		return nil
+		if err := clipboard.WriteAll(url); err != nil {
+			return clipboardErrorMsg{err: err}
+		}
+		return clipboardSuccessMsg{}
 	}
 
 	return a, cmd

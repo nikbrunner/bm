@@ -708,12 +708,28 @@ func (a App) renderHelpBar() string {
 	// Help hint
 	status.WriteString(" [?:keys]")
 
-	// Status message (if any) - use accent color
-	if a.statusMessage != "" {
-		statusStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.AdaptiveColor{Light: "#4A7070", Dark: "#5F8787"}).
-			Bold(true)
-		status.WriteString("  " + statusStyle.Render(a.statusMessage))
+	// Message (if any) - style based on type
+	if a.messageText != "" {
+		var msgStyle lipgloss.Style
+		switch a.messageType {
+		case MessageError:
+			msgStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.AdaptiveColor{Light: "#CC3333", Dark: "#FF6666"}).
+				Bold(true)
+		case MessageWarning:
+			msgStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.AdaptiveColor{Light: "#CC8800", Dark: "#FFAA00"}).
+				Bold(true)
+		case MessageSuccess:
+			msgStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.AdaptiveColor{Light: "#338833", Dark: "#66CC66"}).
+				Bold(true)
+		default: // MessageInfo or MessageNone
+			msgStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.AdaptiveColor{Light: "#4A7070", Dark: "#5F8787"}).
+				Bold(true)
+		}
+		status.WriteString("  " + msgStyle.Render(a.messageText))
 	}
 
 	// Filter mode hint (only when filtering)
