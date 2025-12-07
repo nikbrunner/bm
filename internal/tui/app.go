@@ -1115,38 +1115,24 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return a, nil
 
 		case tea.KeyEnter:
-			// Select highlighted item and navigate to it
+			// Select highlighted item: open URL (bookmark) or navigate (folder)
 			if len(a.fuzzyMatches) > 0 && a.fuzzyCursor < len(a.fuzzyMatches) {
 				selectedItem := a.fuzzyMatches[a.fuzzyCursor].Item
 
 				if selectedItem.IsFolder() {
 					// Navigate into the selected folder
 					folderID := selectedItem.Folder.ID
-					// Build the folder stack by finding parent chain
 					a.folderStack = []string{}
 					a.buildFolderStack(selectedItem.Folder.ParentID)
 					a.currentFolderID = &folderID
 					a.cursor = 0
 					a.refreshItems()
 				} else {
-					// Navigate to the folder containing this bookmark
-					a.folderStack = []string{}
-					if selectedItem.Bookmark.FolderID != nil {
-						// Find the folder and build stack
-						folder := a.store.GetFolderByID(*selectedItem.Bookmark.FolderID)
-						if folder != nil {
-							a.buildFolderStack(folder.ParentID)
-						}
-					}
-					a.currentFolderID = selectedItem.Bookmark.FolderID
-					a.refreshItems()
-					// Set cursor to the bookmark
-					for i, item := range a.items {
-						if !item.IsFolder() && item.Bookmark.ID == selectedItem.Bookmark.ID {
-							a.cursor = i
-							break
-						}
-					}
+					// Open URL directly in browser
+					a.mode = ModeNormal
+					a.fuzzyMatches = nil
+					a.allItems = nil
+					return a, openURLCmd(selectedItem.Bookmark.URL)
 				}
 			}
 			a.mode = ModeNormal
@@ -1337,7 +1323,8 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// Forward to text inputs
 	var cmd tea.Cmd
-	if a.mode == ModeAddBookmark || a.mode == ModeEditBookmark {
+	switch a.mode {
+	case ModeAddBookmark, ModeEditBookmark:
 		// Handle Tab to switch between inputs
 		if msg.Type == tea.KeyTab {
 			if a.titleInput.Focused() {
@@ -1356,9 +1343,9 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else {
 			a.urlInput, cmd = a.urlInput.Update(msg)
 		}
-	} else if a.mode == ModeAddFolder || a.mode == ModeEditFolder {
+	case ModeAddFolder, ModeEditFolder:
 		a.titleInput, cmd = a.titleInput.Update(msg)
-	} else if a.mode == ModeEditTags {
+	case ModeEditTags:
 		// Handle Tab for tag autocompletion
 		if msg.Type == tea.KeyTab {
 			if len(a.tagSuggestions) > 0 {

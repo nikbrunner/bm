@@ -90,7 +90,7 @@ func (c *Client) SuggestBookmark(url string, context string) (*Response, error) 
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrAPIRequest, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {

@@ -50,27 +50,27 @@ func writeItems(b *strings.Builder, store *model.Store, parentID *string, indent
 	folders := store.GetFoldersInFolder(parentID)
 	for _, folder := range folders {
 		// Write folder header
-		b.WriteString(fmt.Sprintf("%s<DT><H3>%s</H3>\n", prefix, html.EscapeString(folder.Name)))
-		b.WriteString(fmt.Sprintf("%s<DL><p>\n", prefix))
+		fmt.Fprintf(b, "%s<DT><H3>%s</H3>\n", prefix, html.EscapeString(folder.Name))
+		fmt.Fprintf(b, "%s<DL><p>\n", prefix)
 
 		// Recurse into folder
 		folderID := folder.ID
 		writeItems(b, store, &folderID, indent+1)
 
 		// Close folder
-		b.WriteString(fmt.Sprintf("%s</DL><p>\n", prefix))
+		fmt.Fprintf(b, "%s</DL><p>\n", prefix)
 	}
 
 	// Get bookmarks at this level
 	bookmarks := store.GetBookmarksInFolder(parentID)
 	for _, bookmark := range bookmarks {
 		timestamp := bookmark.CreatedAt.Unix()
-		b.WriteString(fmt.Sprintf(
+		fmt.Fprintf(b,
 			"%s<DT><A HREF=\"%s\" ADD_DATE=\"%d\">%s</A>\n",
 			prefix,
 			html.EscapeString(bookmark.URL),
 			timestamp,
 			html.EscapeString(bookmark.Title),
-		))
+		)
 	}
 }

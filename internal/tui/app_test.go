@@ -9,8 +9,6 @@ import (
 	"github.com/nikbrunner/bm/internal/tui"
 )
 
-func stringPtr(s string) *string { return &s }
-
 func TestApp_Navigation_JK(t *testing.T) {
 	store := &model.Store{
 		Folders: []model.Folder{
@@ -1712,8 +1710,7 @@ func TestApp_YankURL_OnFolder_DoesNothing(t *testing.T) {
 	app := tui.NewApp(tui.AppParams{Store: store})
 
 	// Press 'Y' on a folder - should do nothing
-	updated, cmd := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'Y'}})
-	app = updated.(tui.App)
+	_, cmd := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'Y'}})
 
 	// Should not return a command
 	if cmd != nil {
@@ -1730,8 +1727,7 @@ func TestApp_YankURL_EmptyList(t *testing.T) {
 	app := tui.NewApp(tui.AppParams{Store: store})
 
 	// Press 'Y' on empty list - should do nothing (no crash)
-	updated, cmd := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'Y'}})
-	app = updated.(tui.App)
+	_, cmd := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'Y'}})
 
 	// Should not return a command
 	if cmd != nil {

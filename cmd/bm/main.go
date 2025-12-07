@@ -233,7 +233,7 @@ func runImport(filePath string) {
 		fmt.Fprintf(os.Stderr, "Error opening file: %v\n", err)
 		os.Exit(1)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	folders, bookmarks, err := importer.ParseHTMLBookmarks(file)
 	if err != nil {
@@ -393,7 +393,7 @@ func runReset() {
 	fmt.Printf("This will delete all bookmarks and folders in:\n  %s\n\n", configPath)
 	fmt.Print("Type 'yes' to confirm: ")
 	var confirm string
-	fmt.Scanln(&confirm)
+	_, _ = fmt.Scanln(&confirm)
 	if confirm != "yes" {
 		fmt.Println("Aborted")
 		os.Exit(0)

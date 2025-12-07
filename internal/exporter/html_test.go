@@ -136,7 +136,7 @@ func TestExportHTML_NestedFolders(t *testing.T) {
 	if devIdx == -1 || reactIdx == -1 || tanstackIdx == -1 {
 		t.Fatal("missing elements in output")
 	}
-	if !(devIdx < reactIdx && reactIdx < tanstackIdx) {
+	if devIdx >= reactIdx || reactIdx >= tanstackIdx {
 		t.Error("expected proper nesting order: Development > React > TanStack Router")
 	}
 }

@@ -1,0 +1,38 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go mod init:*)",
+      "Bash(go mod tidy:*)",
+      "Bash(go get:*)",
+      "Bash(go test:*)",
+      "Bash(go run:*)",
+      "Bash(go build:*)",
+      "Bash(go fmt:*)",
+      "Bash(gofmt:*)",
+      "Bash(mkdir:*)",
+      "Skill(superpowers:test-driven-development)",
+      "Skill(superpowers:brainstorming)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(./bm import:*)",
+      "Bash(./bm git)",
+      "Bash(./bm help:*)",
+      "Bash(golangci-lint:*)"
+    ],
+    "deny": [],
+    "ask": []
+  },
+  "enabledMcpjsonServers": [],
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "golangci-lint run ./..."
+          }
+        ]
+      }
+    ]
+  }
+}

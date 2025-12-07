@@ -581,25 +581,15 @@ func (a App) renderItem(item Item, selected bool, maxWidth int) string {
 	return a.styles.Item.Render(line)
 }
 
-// renderFuzzyFinder renders the fuzzy finder overlay.
+// renderFuzzyFinder renders the fuzzy finder as a full-screen brutalist view.
 func (a App) renderFuzzyFinder() string {
-	// Overlay size: 65% width, 35% height
-	modalWidth := a.width * 65 / 100
-	modalHeight := a.height * 35 / 100
+	// Brutalist style: no borders, full screen, top-left aligned (like help overlay)
+	contentStyle := lipgloss.NewStyle().Padding(1, 2)
 
-	// Minimum sizes
-	if modalWidth < 60 {
-		modalWidth = 60
-	}
-	if modalHeight < 10 {
-		modalHeight = 10
-	}
-
-	// Split width: 25% list, 75% preview
-	contentWidth := modalWidth - 8
-	listWidth := contentWidth * 25 / 100
-	previewWidth := contentWidth * 75 / 100
-	listHeight := modalHeight - 6 // Account for header, input, help
+	// Layout: 40% list, 60% preview
+	listWidth := a.width * 40 / 100
+	previewWidth := a.width * 55 / 100
+	listHeight := a.height - 8 // Account for header, input, help, padding
 
 	// Build results list
 	var results strings.Builder
@@ -611,7 +601,7 @@ func (a App) renderFuzzyFinder() string {
 				break
 			}
 			isSelected := i == a.fuzzyCursor
-			line := a.renderFuzzyItem(match, isSelected, listWidth-2)
+			line := a.renderFuzzyItem(match, isSelected, listWidth-4)
 			results.WriteString(line + "\n")
 		}
 	}
@@ -630,10 +620,9 @@ func (a App) renderFuzzyFinder() string {
 			b := selectedItem.Bookmark
 			preview.WriteString(a.styles.Title.Render(b.Title))
 			preview.WriteString("\n\n")
-			// URL (truncate if needed)
 			url := b.URL
-			if len(url) > previewWidth-2 {
-				url = url[:previewWidth-5] + "..."
+			if len(url) > previewWidth-4 {
+				url = url[:previewWidth-7] + "..."
 			}
 			preview.WriteString(a.styles.URL.Render(url))
 			if len(b.Tags) > 0 {
@@ -647,34 +636,22 @@ func (a App) renderFuzzyFinder() string {
 		}
 	}
 
-	// Industrial color palette
-	accent := lipgloss.AdaptiveColor{Light: "#4A7070", Dark: "#5F8787"}
-	border := lipgloss.AdaptiveColor{Light: "#888888", Dark: "#505050"}
-
-	// Style for results list
+	// Style for results list (no border)
 	resultsStyle := lipgloss.NewStyle().
 		Width(listWidth).
 		Height(listHeight)
 
-	// Style for preview
+	// Style for preview (no border)
 	previewStyle := lipgloss.NewStyle().
-		Border(lipgloss.ThickBorder()).
-		BorderForeground(border).
 		Width(previewWidth).
 		Height(listHeight).
-		Padding(0, 1)
+		PaddingLeft(2)
 
 	resultsPane := resultsStyle.Render(strings.TrimRight(results.String(), "\n"))
 	previewPane := previewStyle.Render(strings.TrimRight(preview.String(), "\n"))
 
 	// Join panes horizontally
-	panes := lipgloss.JoinHorizontal(lipgloss.Top, resultsPane, " ", previewPane)
-
-	// Build the modal
-	modalStyle := lipgloss.NewStyle().
-		Border(lipgloss.ThickBorder()).
-		BorderForeground(accent).
-		Padding(1, 2)
+	panes := lipgloss.JoinHorizontal(lipgloss.Top, resultsPane, previewPane)
 
 	// Result count
 	countStr := fmt.Sprintf("%d results", len(a.fuzzyMatches))
@@ -689,15 +666,16 @@ func (a App) renderFuzzyFinder() string {
 		"",
 		panes,
 		"",
-		a.styles.Help.Render("j/k: move • Enter: select • Esc: cancel"),
+		a.styles.Help.Render("j/k: move  Enter: open  Esc: cancel"),
 	)
 
+	// Top-left aligned, brutalist style
 	return lipgloss.Place(
 		a.width,
 		a.height,
-		lipgloss.Center,
-		lipgloss.Center,
-		modalStyle.Render(content),
+		lipgloss.Left,
+		lipgloss.Top,
+		contentStyle.Render(content),
 	)
 }
 
@@ -938,31 +916,6 @@ func (a App) getItemsForFolder(folderID *string) []Item {
 	}
 
 	return items
-}
-
-// getBreadcrumb returns the folder path as a string.
-func (a App) getBreadcrumb() string {
-	if a.currentFolderID == nil {
-		return "/"
-	}
-
-	parts := []string{}
-
-	// Build from stack
-	for _, id := range a.folderStack {
-		folder := a.store.GetFolderByID(id)
-		if folder != nil {
-			parts = append(parts, folder.Name)
-		}
-	}
-
-	// Add current folder
-	currentFolder := a.store.GetFolderByID(*a.currentFolderID)
-	if currentFolder != nil {
-		parts = append(parts, currentFolder.Name)
-	}
-
-	return "/" + strings.Join(parts, "/")
 }
 
 // Store returns the underlying store (for access from view).
