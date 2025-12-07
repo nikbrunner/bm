@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/nikbrunner/bm/internal/model"
+	"github.com/nikbrunner/bm/internal/tui/layout"
 )
 
 // renderView creates the complete Miller columns view.
@@ -15,25 +16,17 @@ func (a App) renderView() string {
 		return a.renderModal()
 	}
 
-	// Calculate pane height: terminal height - app padding (2) - help bar (2) - pane borders (2)
-	paneHeight := a.height - 6
-	if paneHeight < 5 {
-		paneHeight = 5
-	}
+	// Calculate pane dimensions using layout config
+	paneHeight := layout.CalculatePaneHeight(a.height, a.layoutConfig.Pane)
+	hasPinnedItems := len(a.pinnedItems) > 0
+	atRoot := a.currentFolderID == nil
+	paneLayout := layout.CalculatePaneWidth(a.width, hasPinnedItems, atRoot, a.layoutConfig.Pane)
+	paneWidth := paneLayout.Width
 
 	var columns string
 
-	// Determine layout based on pinned items and current location
-	hasPinnedItems := len(a.pinnedItems) > 0
-	atRoot := a.currentFolderID == nil
-
 	if hasPinnedItems && atRoot {
 		// At root with pinned items: 3 panes (pinned replaces parent since both would show "bm/bookmarks")
-		paneWidth := (a.width - 8) / 3
-		if paneWidth < 20 {
-			paneWidth = 20
-		}
-
 		pinnedPane := a.renderPinnedPane(paneWidth, paneHeight)
 		middlePane := a.renderCurrentPane(paneWidth, paneHeight)
 		rightPane := a.renderPreviewPane(paneWidth, paneHeight)
@@ -46,11 +39,6 @@ func (a App) renderView() string {
 		)
 	} else if hasPinnedItems && !atRoot {
 		// In subfolder with pinned items: 4 panes (pinned | parent | current | preview)
-		paneWidth := (a.width - 10) / 4
-		if paneWidth < 15 {
-			paneWidth = 15
-		}
-
 		pinnedPane := a.renderPinnedPane(paneWidth, paneHeight)
 		leftPane := a.renderParentPane(paneWidth, paneHeight)
 		middlePane := a.renderCurrentPane(paneWidth, paneHeight)
@@ -65,11 +53,6 @@ func (a App) renderView() string {
 		)
 	} else {
 		// No pinned items: 3 panes (parent | current | preview)
-		paneWidth := (a.width - 8) / 3
-		if paneWidth < 20 {
-			paneWidth = 20
-		}
-
 		leftPane := a.renderParentPane(paneWidth, paneHeight)
 		middlePane := a.renderCurrentPane(paneWidth, paneHeight)
 		rightPane := a.renderPreviewPane(paneWidth, paneHeight)
@@ -104,16 +87,14 @@ func (a App) renderPinnedPane(width, height int) string {
 	// Pinned section header
 	content.WriteString("── Pinned ──\n")
 
-	visibleHeight := height - 4 // account for header and divider
-	if visibleHeight < 1 {
-		visibleHeight = 1
-	}
+	visibleHeight := layout.CalculateVisibleHeight(height, a.layoutConfig.Pane.PinnedHeaderReduction)
+	itemWidth := layout.CalculateItemWidth(width, a.layoutConfig.Pane)
 
 	if len(a.pinnedItems) == 0 {
 		content.WriteString(a.styles.Empty.Render("(no pinned items)"))
 	} else {
 		// Calculate viewport offset to keep cursor visible
-		offset := calculateViewportOffset(a.pinnedCursor, len(a.pinnedItems), visibleHeight)
+		offset := layout.CalculateViewportOffset(a.pinnedCursor, len(a.pinnedItems), visibleHeight)
 
 		for i, item := range a.pinnedItems {
 			// Skip items before viewport
@@ -126,7 +107,7 @@ func (a App) renderPinnedPane(width, height int) string {
 			}
 			// Highlight selected item only when pinned pane is focused
 			isSelected := a.focusedPane == PanePinned && i == a.pinnedCursor
-			line := a.renderPinnedItem(item, isSelected, width-4)
+			line := a.renderPinnedItem(item, isSelected, itemWidth)
 			content.WriteString(line + "\n")
 		}
 	}
@@ -158,11 +139,8 @@ func (a App) renderPinnedItem(item Item, selected bool, maxWidth int) string {
 		text = item.Title()
 	}
 
-	// Truncate if too long
-	line := prefix + text + suffix
-	if len(line) > maxWidth {
-		line = prefix + text[:maxWidth-len(prefix)-len(suffix)-3] + "..." + suffix
-	}
+	// Truncate if too long using layout function
+	line, _ := layout.TruncateWithPrefixSuffix(text, maxWidth, prefix, suffix, a.layoutConfig.Text)
 
 	if selected {
 		// Pad to fill width for selection highlight
@@ -180,11 +158,12 @@ func (a App) renderModal() string {
 
 	// Industrial style: thick borders, teal accent
 	accent := lipgloss.AdaptiveColor{Light: "#4A7070", Dark: "#5F8787"}
+	modalWidth := layout.CalculateModalWidth(a.width, a.layoutConfig.Modal.DefaultWidth, a.layoutConfig.Modal)
 	modalStyle := lipgloss.NewStyle().
 		Border(lipgloss.ThickBorder()).
 		BorderForeground(accent).
 		Padding(1, 2).
-		Width(50)
+		Width(modalWidth)
 
 	switch a.mode {
 	case ModeAddFolder:
@@ -321,15 +300,8 @@ func (a App) renderModal() string {
 			content.WriteString(a.styles.Empty.Render("No matching folders"))
 			content.WriteString("\n")
 		} else {
-			maxVisible := 8
-			start := 0
-			if a.moveFolderIdx >= maxVisible {
-				start = a.moveFolderIdx - maxVisible + 1
-			}
-			end := start + maxVisible
-			if end > len(a.moveFilteredFolders) {
-				end = len(a.moveFilteredFolders)
-			}
+			maxVisible := a.layoutConfig.Modal.MoveMaxVisible
+			start, end := layout.CalculateVisibleListItems(maxVisible, a.moveFolderIdx, len(a.moveFilteredFolders))
 
 			for i := start; i < end; i++ {
 				folder := a.moveFilteredFolders[i]
@@ -365,10 +337,8 @@ func (a App) renderModal() string {
 func (a App) renderParentPane(width, height int) string {
 	var content strings.Builder
 
-	visibleHeight := height
-	if visibleHeight < 1 {
-		visibleHeight = 1
-	}
+	visibleHeight := layout.CalculateVisibleHeight(height, 0)
+	itemWidth := layout.CalculateItemWidth(width, a.layoutConfig.Pane)
 
 	if a.currentFolderID == nil {
 		// At root - show app title
@@ -393,7 +363,7 @@ func (a App) renderParentPane(width, height int) string {
 			}
 
 			// Calculate viewport offset to keep current folder visible
-			offset := calculateViewportOffset(currentIdx, len(items), visibleHeight)
+			offset := layout.CalculateViewportOffset(currentIdx, len(items), visibleHeight)
 
 			for i, item := range items {
 				// Skip items before viewport
@@ -406,7 +376,7 @@ func (a App) renderParentPane(width, height int) string {
 				}
 				// Highlight current folder in parent view
 				isCurrentFolder := item.IsFolder() && item.Folder.ID == *a.currentFolderID
-				line := a.renderItem(item, isCurrentFolder, width-4)
+				line := a.renderItem(item, isCurrentFolder, itemWidth)
 				content.WriteString(line + "\n")
 			}
 		}
@@ -421,19 +391,20 @@ func (a App) renderParentPane(width, height int) string {
 func (a App) renderCurrentPane(width, height int) string {
 	var content strings.Builder
 
-	visibleHeight := height
-	if visibleHeight < 1 {
-		visibleHeight = 1
+	// Calculate header lines for filter
+	headerLines := 0
+	if a.mode == ModeFilter || a.filterQuery != "" {
+		headerLines = 1
 	}
+	visibleHeight := layout.CalculateVisibleHeight(height, headerLines)
+	itemWidth := layout.CalculateItemWidth(width, a.layoutConfig.Pane)
 
 	// Show filter input or indicator at top
 	if a.mode == ModeFilter {
 		content.WriteString("/" + a.filterInput.View() + "\n")
-		visibleHeight--
 	} else if a.filterQuery != "" {
 		filterIndicator := a.styles.Tag.Render("/" + a.filterQuery)
 		content.WriteString(filterIndicator + "\n")
-		visibleHeight--
 	}
 
 	// Get display items (filtered or all)
@@ -447,7 +418,7 @@ func (a App) renderCurrentPane(width, height int) string {
 		}
 	} else {
 		// Calculate viewport offset to keep cursor visible
-		offset := calculateViewportOffset(a.cursor, len(displayItems), visibleHeight)
+		offset := layout.CalculateViewportOffset(a.cursor, len(displayItems), visibleHeight)
 
 		for i, item := range displayItems {
 			// Skip items before viewport
@@ -460,7 +431,7 @@ func (a App) renderCurrentPane(width, height int) string {
 			}
 			// Only show selection when browser pane is focused
 			isSelected := a.focusedPane == PaneBrowser && i == a.cursor
-			line := a.renderItem(item, isSelected, width-4)
+			line := a.renderItem(item, isSelected, itemWidth)
 			content.WriteString(line + "\n")
 		}
 	}
@@ -481,10 +452,8 @@ func (a App) renderCurrentPane(width, height int) string {
 func (a App) renderPreviewPane(width, height int) string {
 	var content strings.Builder
 
-	visibleHeight := height
-	if visibleHeight < 1 {
-		visibleHeight = 1
-	}
+	visibleHeight := layout.CalculateVisibleHeight(height, 0)
+	itemWidth := layout.CalculateItemWidth(width, a.layoutConfig.Pane)
 
 	displayItems := a.getDisplayItems()
 	if len(displayItems) > 0 && a.cursor < len(displayItems) {
@@ -503,7 +472,7 @@ func (a App) renderPreviewPane(width, height int) string {
 					if i >= visibleHeight {
 						break
 					}
-					content.WriteString(a.renderItem(child, false, width-4) + "\n")
+					content.WriteString(a.renderItem(child, false, itemWidth) + "\n")
 				}
 			}
 		} else {
@@ -511,11 +480,8 @@ func (a App) renderPreviewPane(width, height int) string {
 			b := item.Bookmark
 			content.WriteString(a.styles.Title.Render(b.Title) + "\n\n")
 
-			// URL (potentially wrapped)
-			url := b.URL
-			if len(url) > width-4 {
-				url = url[:width-7] + "..."
-			}
+			// URL (potentially truncated)
+			url, _ := layout.TruncateText(b.URL, itemWidth, a.layoutConfig.Text)
 			content.WriteString(a.styles.URL.Render(url) + "\n\n")
 
 			// Tags
@@ -565,11 +531,8 @@ func (a App) renderItem(item Item, selected bool, maxWidth int) string {
 		text = item.Title()
 	}
 
-	// Truncate if too long
-	line := prefix + text + suffix
-	if len(line) > maxWidth {
-		line = prefix + text[:maxWidth-len(prefix)-len(suffix)-3] + "..." + suffix
-	}
+	// Truncate if too long using layout function
+	line, _ := layout.TruncateWithPrefixSuffix(text, maxWidth, prefix, suffix, a.layoutConfig.Text)
 
 	if selected {
 		// Pad to fill width for selection highlight
@@ -586,10 +549,13 @@ func (a App) renderFuzzyFinder() string {
 	// Brutalist style: no borders, full screen, top-left aligned (like help overlay)
 	contentStyle := lipgloss.NewStyle().Padding(1, 2)
 
-	// Layout: 40% list, 60% preview
-	listWidth := a.width * 40 / 100
-	previewWidth := a.width * 55 / 100
-	listHeight := a.height - 8 // Account for header, input, help, padding
+	// Calculate layout using config
+	fuzzyLayout := layout.CalculateFuzzyLayout(a.width, a.height, a.layoutConfig.Fuzzy)
+	listWidth := fuzzyLayout.ListWidth
+	previewWidth := fuzzyLayout.PreviewWidth
+	listHeight := fuzzyLayout.ListHeight
+	listItemWidth := layout.CalculateItemWidth(listWidth, a.layoutConfig.Pane)
+	previewItemWidth := layout.CalculateItemWidth(previewWidth, a.layoutConfig.Pane)
 
 	// Build results list
 	var results strings.Builder
@@ -601,7 +567,7 @@ func (a App) renderFuzzyFinder() string {
 				break
 			}
 			isSelected := i == a.fuzzyCursor
-			line := a.renderFuzzyItem(match, isSelected, listWidth-4)
+			line := a.renderFuzzyItem(match, isSelected, listItemWidth)
 			results.WriteString(line + "\n")
 		}
 	}
@@ -620,10 +586,7 @@ func (a App) renderFuzzyFinder() string {
 			b := selectedItem.Bookmark
 			preview.WriteString(a.styles.Title.Render(b.Title))
 			preview.WriteString("\n\n")
-			url := b.URL
-			if len(url) > previewWidth-4 {
-				url = url[:previewWidth-7] + "..."
-			}
+			url, _ := layout.TruncateText(b.URL, previewItemWidth, a.layoutConfig.Text)
 			preview.WriteString(a.styles.URL.Render(url))
 			if len(b.Tags) > 0 {
 				preview.WriteString("\n\n")
@@ -688,7 +651,7 @@ func (a App) renderFuzzyItem(match fuzzyMatch, selected bool, maxWidth int) stri
 
 	title := match.Item.Title()
 
-	// Build highlighted string
+	// Build highlighted string with ANSI codes for matched characters
 	var line strings.Builder
 
 	// Apply highlighting to matched characters
@@ -711,9 +674,9 @@ func (a App) renderFuzzyItem(match fuzzyMatch, selected bool, maxWidth int) stri
 
 	result := line.String()
 
-	// Truncate if needed (rough estimate due to ANSI codes)
-	if len(title)+len(suffix) > maxWidth {
-		result = title[:maxWidth-len(suffix)-3] + "..." + suffix
+	// Use ANSI-aware truncation to preserve highlighting
+	if layout.VisibleLength(result) > maxWidth {
+		result = layout.TruncateANSIAware(result, maxWidth, a.layoutConfig.Text)
 	}
 
 	if selected {
@@ -774,10 +737,7 @@ func (a App) renderHelpBar() string {
 
 // renderQuickAddConfirm renders the AI quick add confirmation modal.
 func (a App) renderQuickAddConfirm() string {
-	modalWidth := 60
-	if a.width < 70 {
-		modalWidth = a.width - 10
-	}
+	modalWidth := layout.CalculateModalWidth(a.width, a.layoutConfig.Modal.LargeWidth, a.layoutConfig.Modal)
 
 	accent := lipgloss.AdaptiveColor{Light: "#4A7070", Dark: "#5F8787"}
 	modalStyle := lipgloss.NewStyle().
@@ -807,15 +767,8 @@ func (a App) renderQuickAddConfirm() string {
 	content.WriteString(folderLabel + "\n")
 
 	// Show folder options with selection
-	visibleFolders := 5
-	start := 0
-	if a.quickAddFolderIdx >= visibleFolders {
-		start = a.quickAddFolderIdx - visibleFolders + 1
-	}
-	end := start + visibleFolders
-	if end > len(a.quickAddFolders) {
-		end = len(a.quickAddFolders)
-	}
+	visibleFolders := a.layoutConfig.Modal.QuickAddFoldersVisible
+	start, end := layout.CalculateVisibleListItems(visibleFolders, a.quickAddFolderIdx, len(a.quickAddFolders))
 
 	for i := start; i < end; i++ {
 		folder := a.quickAddFolders[i]
@@ -888,8 +841,8 @@ func (a App) renderHelpOverlay() string {
 	right.WriteString(a.styles.Help.Render("[?/q/esc] close"))
 
 	// Join columns
-	leftCol := lipgloss.NewStyle().Width(18).Render(left.String())
-	rightCol := lipgloss.NewStyle().Width(20).Render(right.String())
+	leftCol := lipgloss.NewStyle().Width(a.layoutConfig.Modal.HelpLeftColumnWidth).Render(left.String())
+	rightCol := lipgloss.NewStyle().Width(a.layoutConfig.Modal.HelpRightColumnWidth).Render(right.String())
 	cols := lipgloss.JoinHorizontal(lipgloss.Top, leftCol, "  ", rightCol)
 
 	// Top-left aligned, brutalist style
@@ -921,25 +874,4 @@ func (a App) getItemsForFolder(folderID *string) []Item {
 // Store returns the underlying store (for access from view).
 func (a App) Store() *model.Store {
 	return a.store
-}
-
-// calculateViewportOffset calculates the scroll offset needed to keep the
-// selected item visible within the viewport.
-func calculateViewportOffset(selected, total, viewportHeight int) int {
-	if total <= viewportHeight {
-		return 0
-	}
-
-	// Keep selection roughly centered, but clamp to valid range
-	offset := selected - viewportHeight/2
-	if offset < 0 {
-		offset = 0
-	}
-
-	maxOffset := total - viewportHeight
-	if offset > maxOffset {
-		offset = maxOffset
-	}
-
-	return offset
 }

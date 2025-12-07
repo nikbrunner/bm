@@ -13,6 +13,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/nikbrunner/bm/internal/ai"
 	"github.com/nikbrunner/bm/internal/model"
+	"github.com/nikbrunner/bm/internal/tui/layout"
 	"github.com/sahilm/fuzzy"
 )
 
@@ -80,9 +81,10 @@ func (is itemStrings) Len() int {
 
 // App is the main bubbletea model for the bookmark manager.
 type App struct {
-	store  *model.Store
-	keys   KeyMap
-	styles Styles
+	store        *model.Store
+	keys         KeyMap
+	styles       Styles
+	layoutConfig layout.LayoutConfig
 
 	// Focus state
 	focusedPane  FocusedPane // which pane has focus
@@ -154,9 +156,10 @@ type App struct {
 
 // AppParams holds parameters for creating a new App.
 type AppParams struct {
-	Store  *model.Store
-	Keys   *KeyMap // optional, uses default if nil
-	Styles *Styles // optional, uses default if nil
+	Store        *model.Store
+	Keys         *KeyMap              // optional, uses default if nil
+	Styles       *Styles              // optional, uses default if nil
+	LayoutConfig *layout.LayoutConfig // optional, uses default if nil
 }
 
 // NewApp creates a new App with the given parameters.
@@ -171,46 +174,52 @@ func NewApp(params AppParams) App {
 		styles = *params.Styles
 	}
 
-	// Initialize text inputs
+	layoutCfg := layout.DefaultConfig()
+	if params.LayoutConfig != nil {
+		layoutCfg = *params.LayoutConfig
+	}
+
+	// Initialize text inputs using layout config
 	titleInput := textinput.New()
 	titleInput.Placeholder = "Title"
-	titleInput.CharLimit = 100
-	titleInput.Width = 40
+	titleInput.CharLimit = layoutCfg.Input.TitleCharLimit
+	titleInput.Width = layoutCfg.Input.StandardWidth
 
 	urlInput := textinput.New()
 	urlInput.Placeholder = "URL"
-	urlInput.CharLimit = 500
-	urlInput.Width = 40
+	urlInput.CharLimit = layoutCfg.Input.URLCharLimit
+	urlInput.Width = layoutCfg.Input.StandardWidth
 
 	tagsInput := textinput.New()
 	tagsInput.Placeholder = "tag1, tag2, tag3"
-	tagsInput.CharLimit = 200
-	tagsInput.Width = 40
+	tagsInput.CharLimit = layoutCfg.Input.TagsCharLimit
+	tagsInput.Width = layoutCfg.Input.StandardWidth
 
 	searchInput := textinput.New()
 	searchInput.Placeholder = "Search all..."
-	searchInput.CharLimit = 100
-	searchInput.Width = 40
+	searchInput.CharLimit = layoutCfg.Input.SearchCharLimit
+	searchInput.Width = layoutCfg.Input.StandardWidth
 
 	filterInput := textinput.New()
 	filterInput.Placeholder = "Filter..."
-	filterInput.CharLimit = 50
-	filterInput.Width = 30
+	filterInput.CharLimit = layoutCfg.Input.FilterCharLimit
+	filterInput.Width = layoutCfg.Input.FilterWidth
 
 	quickAddInput := textinput.New()
 	quickAddInput.Placeholder = "https://..."
-	quickAddInput.CharLimit = 500
-	quickAddInput.Width = 50
+	quickAddInput.CharLimit = layoutCfg.Input.URLCharLimit
+	quickAddInput.Width = layoutCfg.Input.QuickAddWidth
 
 	moveFilterInput := textinput.New()
 	moveFilterInput.Placeholder = "Filter folders..."
-	moveFilterInput.CharLimit = 100
-	moveFilterInput.Width = 40
+	moveFilterInput.CharLimit = layoutCfg.Input.TitleCharLimit
+	moveFilterInput.Width = layoutCfg.Input.StandardWidth
 
 	app := App{
 		store:           params.Store,
 		keys:            keys,
 		styles:          styles,
+		layoutConfig:    layoutCfg,
 		focusedPane:     PaneBrowser, // will be updated after refreshPinnedItems
 		pinnedCursor:    0,
 		currentFolderID: nil,
@@ -1115,7 +1124,7 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return a, nil
 
 		case tea.KeyEnter:
-			// Select highlighted item: open URL (bookmark) or navigate (folder)
+			// Select highlighted item: navigate to folder or bookmark location
 			if len(a.fuzzyMatches) > 0 && a.fuzzyCursor < len(a.fuzzyMatches) {
 				selectedItem := a.fuzzyMatches[a.fuzzyCursor].Item
 
@@ -1128,11 +1137,31 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					a.cursor = 0
 					a.refreshItems()
 				} else {
-					// Open URL directly in browser
-					a.mode = ModeNormal
-					a.fuzzyMatches = nil
-					a.allItems = nil
-					return a, openURLCmd(selectedItem.Bookmark.URL)
+					// Navigate to bookmark's folder and position cursor on it
+					bookmark := selectedItem.Bookmark
+					a.folderStack = []string{}
+
+					if bookmark.FolderID != nil {
+						// Bookmark is in a folder - navigate there
+						folder := a.store.GetFolderByID(*bookmark.FolderID)
+						if folder != nil {
+							a.buildFolderStack(folder.ParentID)
+						}
+						a.currentFolderID = bookmark.FolderID
+					} else {
+						// Bookmark is at root
+						a.currentFolderID = nil
+					}
+
+					a.refreshItems()
+
+					// Find and position cursor on the bookmark
+					for i, item := range a.items {
+						if !item.IsFolder() && item.Bookmark.ID == bookmark.ID {
+							a.cursor = i
+							break
+						}
+					}
 				}
 			}
 			a.mode = ModeNormal
