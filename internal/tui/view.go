@@ -19,7 +19,7 @@ func (a App) renderView() string {
 	// Calculate pane dimensions using layout config
 	paneHeight := layout.CalculatePaneHeight(a.height, a.layoutConfig.Pane)
 	hasPinnedItems := len(a.pinnedItems) > 0
-	atRoot := a.currentFolderID == nil
+	atRoot := a.browser.CurrentFolderID == nil
 	paneLayout := layout.CalculatePaneWidth(a.width, hasPinnedItems, atRoot, a.layoutConfig.Pane)
 	paneWidth := paneLayout.Width
 
@@ -169,48 +169,48 @@ func (a App) renderModal() string {
 	case ModeAddFolder:
 		title.WriteString("Add Folder\n\n")
 		content.WriteString("Name:\n")
-		content.WriteString(a.titleInput.View())
+		content.WriteString(a.modal.TitleInput.View())
 		content.WriteString("\n\n")
 		content.WriteString(a.styles.Help.Render("Enter: save • Esc: cancel"))
 
 	case ModeAddBookmark:
 		title.WriteString("Add Bookmark\n\n")
 		content.WriteString("Title:\n")
-		content.WriteString(a.titleInput.View())
+		content.WriteString(a.modal.TitleInput.View())
 		content.WriteString("\n\n")
 		content.WriteString("URL:\n")
-		content.WriteString(a.urlInput.View())
+		content.WriteString(a.modal.URLInput.View())
 		content.WriteString("\n\n")
 		content.WriteString(a.styles.Help.Render("Tab: switch field • Enter: save • Esc: cancel"))
 
 	case ModeEditFolder:
 		title.WriteString("Edit Folder\n\n")
 		content.WriteString("Name:\n")
-		content.WriteString(a.titleInput.View())
+		content.WriteString(a.modal.TitleInput.View())
 		content.WriteString("\n\n")
 		content.WriteString(a.styles.Help.Render("Enter: save • Esc: cancel"))
 
 	case ModeEditBookmark:
 		title.WriteString("Edit Bookmark\n\n")
 		content.WriteString("Title:\n")
-		content.WriteString(a.titleInput.View())
+		content.WriteString(a.modal.TitleInput.View())
 		content.WriteString("\n\n")
 		content.WriteString("URL:\n")
-		content.WriteString(a.urlInput.View())
+		content.WriteString(a.modal.URLInput.View())
 		content.WriteString("\n\n")
 		content.WriteString(a.styles.Help.Render("Tab: switch field • Enter: save • Esc: cancel"))
 
 	case ModeEditTags:
 		title.WriteString("Edit Tags\n\n")
 		content.WriteString("Tags (comma-separated):\n")
-		content.WriteString(a.tagsInput.View())
+		content.WriteString(a.modal.TagsInput.View())
 		content.WriteString("\n")
 
 		// Render tag suggestions if any
-		if len(a.tagSuggestions) > 0 {
+		if len(a.modal.TagSuggestions) > 0 {
 			content.WriteString("\n")
-			for i, tag := range a.tagSuggestions {
-				if i == a.tagSuggestionIdx {
+			for i, tag := range a.modal.TagSuggestions {
+				if i == a.modal.TagSuggestionIdx {
 					content.WriteString(a.styles.ItemSelected.Render("▸ " + tag))
 				} else {
 					content.WriteString(a.styles.Help.Render("  " + tag))
@@ -221,7 +221,7 @@ func (a App) renderModal() string {
 
 		content.WriteString("\n")
 		helpText := "Enter: save • Esc: cancel"
-		if len(a.tagSuggestions) > 0 {
+		if len(a.modal.TagSuggestions) > 0 {
 			helpText = "Tab: accept • ↑↓: navigate • Enter: save • Esc: cancel"
 		}
 		content.WriteString(a.styles.Help.Render(helpText))
@@ -229,16 +229,16 @@ func (a App) renderModal() string {
 	case ModeConfirmDelete:
 		// Determine action and item type
 		action := "Delete"
-		if a.cutMode {
+		if a.modal.CutMode {
 			action = "Cut"
 		}
 
 		// Try folder first, then bookmark
 		var itemType, itemName string
-		if folder := a.store.GetFolderByID(a.editItemID); folder != nil {
+		if folder := a.store.GetFolderByID(a.modal.EditItemID); folder != nil {
 			itemType = "Folder"
 			itemName = folder.Name
-		} else if bookmark := a.store.GetBookmarkByID(a.editItemID); bookmark != nil {
+		} else if bookmark := a.store.GetBookmarkByID(a.modal.EditItemID); bookmark != nil {
 			itemType = "Bookmark"
 			itemName = bookmark.Title
 		} else {
@@ -261,7 +261,7 @@ func (a App) renderModal() string {
 	case ModeQuickAdd:
 		title.WriteString("AI Quick Add\n\n")
 		content.WriteString("URL:\n")
-		content.WriteString(a.quickAddInput.View())
+		content.WriteString(a.quickAdd.Input.View())
 		content.WriteString("\n\n")
 		content.WriteString(a.styles.Help.Render("Enter: analyze • Esc: cancel"))
 
@@ -279,8 +279,8 @@ func (a App) renderModal() string {
 		// Get item being moved
 		displayItems := a.getDisplayItems()
 		var itemName string
-		if a.cursor < len(displayItems) {
-			item := displayItems[a.cursor]
+		if a.browser.Cursor < len(displayItems) {
+			item := displayItems[a.browser.Cursor]
 			if item.IsFolder() {
 				itemName = item.Folder.Name
 			} else {
@@ -292,20 +292,20 @@ func (a App) renderModal() string {
 		content.WriteString("Moving: " + itemName + "\n\n")
 
 		// Filter input
-		content.WriteString(a.moveFilterInput.View())
+		content.WriteString(a.move.FilterInput.View())
 		content.WriteString("\n\n")
 
 		// Render filtered folder list
-		if len(a.moveFilteredFolders) == 0 {
+		if len(a.move.FilteredFolders) == 0 {
 			content.WriteString(a.styles.Empty.Render("No matching folders"))
 			content.WriteString("\n")
 		} else {
 			maxVisible := a.layoutConfig.Modal.MoveMaxVisible
-			start, end := layout.CalculateVisibleListItems(maxVisible, a.moveFolderIdx, len(a.moveFilteredFolders))
+			start, end := layout.CalculateVisibleListItems(maxVisible, a.move.FolderIdx, len(a.move.FilteredFolders))
 
 			for i := start; i < end; i++ {
-				folder := a.moveFilteredFolders[i]
-				if i == a.moveFolderIdx {
+				folder := a.move.FilteredFolders[i]
+				if i == a.move.FolderIdx {
 					content.WriteString(a.styles.ItemSelected.Render("▸ " + folder))
 				} else {
 					content.WriteString("  " + folder)
@@ -340,14 +340,14 @@ func (a App) renderParentPane(width, height int) string {
 	visibleHeight := layout.CalculateVisibleHeight(height, 0)
 	itemWidth := layout.CalculateItemWidth(width, a.layoutConfig.Pane)
 
-	if a.currentFolderID == nil {
+	if a.browser.CurrentFolderID == nil {
 		// At root - show app title
 		content.WriteString(a.styles.Title.Render("bm"))
 		content.WriteString("\n")
 		content.WriteString(a.styles.Empty.Render("bookmarks"))
 	} else {
 		// Show parent folder contents
-		currentFolder := a.store.GetFolderByID(*a.currentFolderID)
+		currentFolder := a.store.GetFolderByID(*a.browser.CurrentFolderID)
 		if currentFolder != nil {
 			// Show the parent folder's contents (siblings of current)
 			parentFolderID := currentFolder.ParentID
@@ -356,7 +356,7 @@ func (a App) renderParentPane(width, height int) string {
 			// Find index of current folder for viewport calculation
 			currentIdx := 0
 			for i, item := range items {
-				if item.IsFolder() && item.Folder.ID == *a.currentFolderID {
+				if item.IsFolder() && item.Folder.ID == *a.browser.CurrentFolderID {
 					currentIdx = i
 					break
 				}
@@ -375,7 +375,7 @@ func (a App) renderParentPane(width, height int) string {
 					break
 				}
 				// Highlight current folder in parent view
-				isCurrentFolder := item.IsFolder() && item.Folder.ID == *a.currentFolderID
+				isCurrentFolder := item.IsFolder() && item.Folder.ID == *a.browser.CurrentFolderID
 				line := a.renderItem(item, isCurrentFolder, itemWidth)
 				content.WriteString(line + "\n")
 			}
@@ -393,7 +393,7 @@ func (a App) renderCurrentPane(width, height int) string {
 
 	// Calculate header lines for filter
 	headerLines := 0
-	if a.mode == ModeFilter || a.filterQuery != "" {
+	if a.mode == ModeFilter || a.search.FilterQuery != "" {
 		headerLines = 1
 	}
 	visibleHeight := layout.CalculateVisibleHeight(height, headerLines)
@@ -401,9 +401,9 @@ func (a App) renderCurrentPane(width, height int) string {
 
 	// Show filter input or indicator at top
 	if a.mode == ModeFilter {
-		content.WriteString("/" + a.filterInput.View() + "\n")
-	} else if a.filterQuery != "" {
-		filterIndicator := a.styles.Tag.Render("/" + a.filterQuery)
+		content.WriteString("/" + a.search.FilterInput.View() + "\n")
+	} else if a.search.FilterQuery != "" {
+		filterIndicator := a.styles.Tag.Render("/" + a.search.FilterQuery)
 		content.WriteString(filterIndicator + "\n")
 	}
 
@@ -411,14 +411,14 @@ func (a App) renderCurrentPane(width, height int) string {
 	displayItems := a.getDisplayItems()
 
 	if len(displayItems) == 0 {
-		if a.filterQuery != "" {
+		if a.search.FilterQuery != "" {
 			content.WriteString(a.styles.Empty.Render("(no matches)"))
 		} else {
 			content.WriteString(a.styles.Empty.Render("(empty)"))
 		}
 	} else {
 		// Calculate viewport offset to keep cursor visible
-		offset := layout.CalculateViewportOffset(a.cursor, len(displayItems), visibleHeight)
+		offset := layout.CalculateViewportOffset(a.browser.Cursor, len(displayItems), visibleHeight)
 
 		for i, item := range displayItems {
 			// Skip items before viewport
@@ -430,7 +430,7 @@ func (a App) renderCurrentPane(width, height int) string {
 				break
 			}
 			// Only show selection when browser pane is focused
-			isSelected := a.focusedPane == PaneBrowser && i == a.cursor
+			isSelected := a.focusedPane == PaneBrowser && i == a.browser.Cursor
 			line := a.renderItem(item, isSelected, itemWidth)
 			content.WriteString(line + "\n")
 		}
@@ -456,8 +456,8 @@ func (a App) renderPreviewPane(width, height int) string {
 	itemWidth := layout.CalculateItemWidth(width, a.layoutConfig.Pane)
 
 	displayItems := a.getDisplayItems()
-	if len(displayItems) > 0 && a.cursor < len(displayItems) {
-		item := displayItems[a.cursor]
+	if len(displayItems) > 0 && a.browser.Cursor < len(displayItems) {
+		item := displayItems[a.browser.Cursor]
 
 		if item.IsFolder() {
 			// Show folder contents preview
@@ -559,14 +559,14 @@ func (a App) renderFuzzyFinder() string {
 
 	// Build results list
 	var results strings.Builder
-	if len(a.fuzzyMatches) == 0 {
+	if len(a.search.FuzzyMatches) == 0 {
 		results.WriteString(a.styles.Empty.Render("No matches"))
 	} else {
-		for i, match := range a.fuzzyMatches {
+		for i, match := range a.search.FuzzyMatches {
 			if i >= listHeight {
 				break
 			}
-			isSelected := i == a.fuzzyCursor
+			isSelected := i == a.search.FuzzyCursor
 			line := a.renderFuzzyItem(match, isSelected, listItemWidth)
 			results.WriteString(line + "\n")
 		}
@@ -574,8 +574,8 @@ func (a App) renderFuzzyFinder() string {
 
 	// Build preview content
 	var preview strings.Builder
-	if len(a.fuzzyMatches) > 0 && a.fuzzyCursor < len(a.fuzzyMatches) {
-		selectedItem := a.fuzzyMatches[a.fuzzyCursor].Item
+	if len(a.search.FuzzyMatches) > 0 && a.search.FuzzyCursor < len(a.search.FuzzyMatches) {
+		selectedItem := a.search.FuzzyMatches[a.search.FuzzyCursor].Item
 		if selectedItem.IsFolder() {
 			preview.WriteString(selectedItem.Folder.Name + "/")
 			preview.WriteString("\n\n")
@@ -617,15 +617,15 @@ func (a App) renderFuzzyFinder() string {
 	panes := lipgloss.JoinHorizontal(lipgloss.Top, resultsPane, previewPane)
 
 	// Result count
-	countStr := fmt.Sprintf("%d results", len(a.fuzzyMatches))
-	if len(a.fuzzyMatches) == 1 {
+	countStr := fmt.Sprintf("%d results", len(a.search.FuzzyMatches))
+	if len(a.search.FuzzyMatches) == 1 {
 		countStr = "1 result"
 	}
 
 	content := lipgloss.JoinVertical(lipgloss.Left,
 		a.styles.Title.Render("Find")+"  "+a.styles.Empty.Render(countStr),
 		"",
-		"> "+a.searchInput.Value()+"█",
+		"> "+a.search.Input.Value()+"█",
 		"",
 		panes,
 		"",
@@ -696,7 +696,7 @@ func (a App) renderHelpBar() string {
 		SortCreated: "new",
 		SortVisited: "vis",
 	}
-	status.WriteString("[ord:" + sortLabels[a.sortMode] + "]")
+	status.WriteString("[ord:" + sortLabels[a.browser.SortMode] + "]")
 
 	// Confirm mode indicator (abbreviated)
 	if a.confirmDelete {
@@ -768,27 +768,27 @@ func (a App) renderQuickAddConfirm() string {
 
 	// Title input
 	titleLabel := "Title:"
-	if a.titleInput.Focused() {
+	if a.modal.TitleInput.Focused() {
 		titleLabel = a.styles.Tag.Render("Title:")
 	}
 	content.WriteString(titleLabel + "\n")
-	content.WriteString(a.titleInput.View())
+	content.WriteString(a.modal.TitleInput.View())
 	content.WriteString("\n\n")
 
 	// Folder picker
 	folderLabel := "Folder:"
-	if !a.titleInput.Focused() && !a.tagsInput.Focused() {
+	if !a.modal.TitleInput.Focused() && !a.modal.TagsInput.Focused() {
 		folderLabel = a.styles.Tag.Render("Folder:")
 	}
 	content.WriteString(folderLabel + "\n")
 
 	// Show folder options with selection
 	visibleFolders := a.layoutConfig.Modal.QuickAddFoldersVisible
-	start, end := layout.CalculateVisibleListItems(visibleFolders, a.quickAddFolderIdx, len(a.quickAddFolders))
+	start, end := layout.CalculateVisibleListItems(visibleFolders, a.quickAdd.FolderIdx, len(a.quickAdd.Folders))
 
 	for i := start; i < end; i++ {
-		folder := a.quickAddFolders[i]
-		if i == a.quickAddFolderIdx {
+		folder := a.quickAdd.Folders[i]
+		if i == a.quickAdd.FolderIdx {
 			content.WriteString(a.styles.ItemSelected.Render("> " + folder))
 		} else {
 			content.WriteString("  " + folder)
@@ -799,11 +799,11 @@ func (a App) renderQuickAddConfirm() string {
 
 	// Tags input
 	tagsLabel := "Tags:"
-	if a.tagsInput.Focused() {
+	if a.modal.TagsInput.Focused() {
 		tagsLabel = a.styles.Tag.Render("Tags:")
 	}
 	content.WriteString(tagsLabel + "\n")
-	content.WriteString(a.tagsInput.View())
+	content.WriteString(a.modal.TagsInput.View())
 	content.WriteString("\n\n")
 
 	content.WriteString(a.styles.Help.Render("Tab: next field • j/k: folder • Enter: save • Esc: cancel"))

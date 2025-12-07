@@ -9,7 +9,6 @@ import (
 
 	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/nikbrunner/bm/internal/ai"
 	"github.com/nikbrunner/bm/internal/model"
@@ -118,25 +117,11 @@ type App struct {
 	pinnedCursor int         // cursor in pinned pane
 	pinnedItems  []Item      // cached pinned items (folders first, then bookmarks)
 
-	// Navigation state
-	currentFolderID *string  // nil = root
-	folderStack     []string // breadcrumb trail of folder IDs
-	cursor          int      // selected item index
-	items           []Item   // current list items
+	// Browser navigation state
+	browser BrowserNav
 
-	// Sort mode
-	sortMode SortMode
-
-	// Global search (s key)
-	searchInput  textinput.Model
-	fuzzyMatches []fuzzyMatch // Current fuzzy match results
-	fuzzyCursor  int          // Selected index in fuzzy results
-	allItems     []Item       // All items for global search
-
-	// Local filter (/ key)
-	filterInput   textinput.Model
-	filterQuery   string // Active filter query (persists after closing filter)
-	filteredItems []Item // Items matching filter in current folder
+	// Global search (s key) and local filter (/ key)
+	search SearchState
 
 	// For gg command
 	lastKeyWasG bool
@@ -144,31 +129,15 @@ type App struct {
 	// Yank buffer
 	yankedItem *Item
 
-	// Modal state
-	mode       Mode
-	titleInput textinput.Model
-	urlInput   textinput.Model
-	tagsInput  textinput.Model
-	editItemID string // ID of item being edited (folder or bookmark)
-	cutMode    bool   // true = cut (buffer), false = delete (no buffer)
-
-	// Tag autocompletion state
-	allTags          []string // All unique tags in store
-	tagSuggestions   []string // Filtered suggestions for current input
-	tagSuggestionIdx int      // Selected suggestion index (-1 = none)
+	// UI mode and modal state
+	mode  Mode
+	modal ModalState
 
 	// Quick add (AI-powered) state
-	quickAddInput     textinput.Model // URL input
-	quickAddResponse  *ai.Response    // AI suggestion
-	quickAddError     error           // AI error (if any)
-	quickAddFolders   []string        // Available folder paths for picker
-	quickAddFolderIdx int             // Selected folder index in picker
+	quickAdd QuickAddState
 
 	// Move state
-	moveFilterInput     textinput.Model // Filter input for folder search
-	moveFolders         []string        // All folder paths
-	moveFilteredFolders []string        // Filtered folder paths based on search
-	moveFolderIdx       int             // Selected folder index in filtered list
+	move MoveState
 
 	// Settings
 	confirmDelete bool // true = ask confirmation before delete (default true)
@@ -207,63 +176,22 @@ func NewApp(params AppParams) App {
 		layoutCfg = *params.LayoutConfig
 	}
 
-	// Initialize text inputs using layout config
-	titleInput := textinput.New()
-	titleInput.Placeholder = "Title"
-	titleInput.CharLimit = layoutCfg.Input.TitleCharLimit
-	titleInput.Width = layoutCfg.Input.StandardWidth
-
-	urlInput := textinput.New()
-	urlInput.Placeholder = "URL"
-	urlInput.CharLimit = layoutCfg.Input.URLCharLimit
-	urlInput.Width = layoutCfg.Input.StandardWidth
-
-	tagsInput := textinput.New()
-	tagsInput.Placeholder = "tag1, tag2, tag3"
-	tagsInput.CharLimit = layoutCfg.Input.TagsCharLimit
-	tagsInput.Width = layoutCfg.Input.StandardWidth
-
-	searchInput := textinput.New()
-	searchInput.Placeholder = "Search all..."
-	searchInput.CharLimit = layoutCfg.Input.SearchCharLimit
-	searchInput.Width = layoutCfg.Input.StandardWidth
-
-	filterInput := textinput.New()
-	filterInput.Placeholder = "Filter..."
-	filterInput.CharLimit = layoutCfg.Input.FilterCharLimit
-	filterInput.Width = layoutCfg.Input.FilterWidth
-
-	quickAddInput := textinput.New()
-	quickAddInput.Placeholder = "https://..."
-	quickAddInput.CharLimit = layoutCfg.Input.URLCharLimit
-	quickAddInput.Width = layoutCfg.Input.QuickAddWidth
-
-	moveFilterInput := textinput.New()
-	moveFilterInput.Placeholder = "Filter folders..."
-	moveFilterInput.CharLimit = layoutCfg.Input.TitleCharLimit
-	moveFilterInput.Width = layoutCfg.Input.StandardWidth
-
 	app := App{
-		store:           params.Store,
-		keys:            keys,
-		styles:          styles,
-		layoutConfig:    layoutCfg,
-		focusedPane:     PaneBrowser, // will be updated after refreshPinnedItems
-		pinnedCursor:    0,
-		currentFolderID: nil,
-		folderStack:     []string{},
-		cursor:          0,
-		mode:            ModeNormal,
-		titleInput:      titleInput,
-		urlInput:        urlInput,
-		tagsInput:       tagsInput,
-		searchInput:     searchInput,
-		filterInput:     filterInput,
-		quickAddInput:   quickAddInput,
-		moveFilterInput: moveFilterInput,
-		confirmDelete:   true,
-		width:           80,
-		height:          24,
+		store:         params.Store,
+		keys:          keys,
+		styles:        styles,
+		layoutConfig:  layoutCfg,
+		focusedPane:   PaneBrowser, // will be updated after refreshPinnedItems
+		pinnedCursor:  0,
+		browser:       NewBrowserNav(),
+		mode:          ModeNormal,
+		modal:         NewModalState(layoutCfg),
+		search:        NewSearchState(layoutCfg),
+		quickAdd:      NewQuickAddState(layoutCfg),
+		move:          NewMoveState(layoutCfg),
+		confirmDelete: true,
+		width:         80,
+		height:        24,
 	}
 
 	app.refreshItems()
@@ -279,17 +207,17 @@ func NewApp(params AppParams) App {
 
 // refreshItems rebuilds the items slice based on current folder and sort mode.
 func (a *App) refreshItems() {
-	a.items = []Item{}
+	a.browser.Items = []Item{}
 	// Clear filter when refreshing (folder changed)
-	a.filterQuery = ""
-	a.filteredItems = nil
+	a.search.FilterQuery = ""
+	a.search.FilteredItems = nil
 
 	// Get folders and bookmarks
-	folders := a.store.GetFoldersInFolder(a.currentFolderID)
-	bookmarks := a.store.GetBookmarksInFolder(a.currentFolderID)
+	folders := a.store.GetFoldersInFolder(a.browser.CurrentFolderID)
+	bookmarks := a.store.GetBookmarksInFolder(a.browser.CurrentFolderID)
 
 	// Apply sorting based on current mode
-	switch a.sortMode {
+	switch a.browser.SortMode {
 	case SortAlpha:
 		// Sort folders alphabetically
 		sort.Slice(folders, func(i, j int) bool {
@@ -325,7 +253,7 @@ func (a *App) refreshItems() {
 
 	// Add folders first (folders always before bookmarks)
 	for i := range folders {
-		a.items = append(a.items, Item{
+		a.browser.Items = append(a.browser.Items, Item{
 			Kind:   ItemFolder,
 			Folder: &folders[i],
 		})
@@ -333,7 +261,7 @@ func (a *App) refreshItems() {
 
 	// Add bookmarks
 	for i := range bookmarks {
-		a.items = append(a.items, Item{
+		a.browser.Items = append(a.browser.Items, Item{
 			Kind:     ItemBookmark,
 			Bookmark: &bookmarks[i],
 		})
@@ -389,38 +317,38 @@ func (a *App) buildFolderStack(parentID *string) {
 		path = append([]string{folder.ID}, path...) // prepend
 		currentID = folder.ParentID
 	}
-	a.folderStack = path
+	a.browser.FolderStack = path
 }
 
 // updateFuzzyMatches performs fuzzy matching on allItems with the current query.
 func (a *App) updateFuzzyMatches() {
-	query := a.searchInput.Value()
+	query := a.search.Input.Value()
 
 	if query == "" {
 		// No query - show all items
-		a.fuzzyMatches = make([]fuzzyMatch, len(a.allItems))
-		for i, item := range a.allItems {
-			a.fuzzyMatches[i] = fuzzyMatch{Item: item}
+		a.search.FuzzyMatches = make([]fuzzyMatch, len(a.search.AllItems))
+		for i, item := range a.search.AllItems {
+			a.search.FuzzyMatches[i] = fuzzyMatch{Item: item}
 		}
 		return
 	}
 
 	// Run fuzzy matching
-	matches := fuzzy.FindFrom(query, itemStrings(a.allItems))
+	matches := fuzzy.FindFrom(query, itemStrings(a.search.AllItems))
 
 	// Convert to our fuzzyMatch type
-	a.fuzzyMatches = make([]fuzzyMatch, len(matches))
+	a.search.FuzzyMatches = make([]fuzzyMatch, len(matches))
 	for i, m := range matches {
-		a.fuzzyMatches[i] = fuzzyMatch{
-			Item:           a.allItems[m.Index],
+		a.search.FuzzyMatches[i] = fuzzyMatch{
+			Item:           a.search.AllItems[m.Index],
 			MatchedIndexes: m.MatchedIndexes,
 			Score:          m.Score,
 		}
 	}
 
 	// Reset cursor if out of bounds
-	if a.fuzzyCursor >= len(a.fuzzyMatches) {
-		a.fuzzyCursor = 0
+	if a.search.FuzzyCursor >= len(a.search.FuzzyMatches) {
+		a.search.FuzzyCursor = 0
 	}
 }
 
@@ -432,17 +360,17 @@ func (a *App) collectAllTags() {
 			tagSet[tag] = true
 		}
 	}
-	a.allTags = make([]string, 0, len(tagSet))
+	a.modal.AllTags = make([]string, 0, len(tagSet))
 	for tag := range tagSet {
-		a.allTags = append(a.allTags, tag)
+		a.modal.AllTags = append(a.modal.AllTags, tag)
 	}
-	sort.Strings(a.allTags)
+	sort.Strings(a.modal.AllTags)
 }
 
 // updateTagSuggestions filters suggestions based on current input.
 func (a *App) updateTagSuggestions() {
 	// Get the current word being typed (after the last comma)
-	input := a.tagsInput.Value()
+	input := a.modal.TagsInput.Value()
 	lastComma := strings.LastIndex(input, ",")
 	currentWord := input
 	if lastComma >= 0 {
@@ -451,8 +379,8 @@ func (a *App) updateTagSuggestions() {
 	currentWord = strings.TrimSpace(strings.ToLower(currentWord))
 
 	if currentWord == "" {
-		a.tagSuggestions = nil
-		a.tagSuggestionIdx = -1
+		a.modal.TagSuggestions = nil
+		a.modal.TagSuggestionIdx = -1
 		return
 	}
 
@@ -463,28 +391,28 @@ func (a *App) updateTagSuggestions() {
 	}
 
 	// Filter tags that start with currentWord and aren't already used
-	a.tagSuggestions = nil
-	for _, tag := range a.allTags {
+	a.modal.TagSuggestions = nil
+	for _, tag := range a.modal.AllTags {
 		tagLower := strings.ToLower(tag)
 		if strings.HasPrefix(tagLower, currentWord) && !usedTags[tagLower] {
-			a.tagSuggestions = append(a.tagSuggestions, tag)
+			a.modal.TagSuggestions = append(a.modal.TagSuggestions, tag)
 		}
 	}
 
 	// Reset selection if out of bounds
-	if a.tagSuggestionIdx >= len(a.tagSuggestions) {
-		a.tagSuggestionIdx = -1
+	if a.modal.TagSuggestionIdx >= len(a.modal.TagSuggestions) {
+		a.modal.TagSuggestionIdx = -1
 	}
 }
 
 // insertTagSuggestion inserts the selected tag suggestion.
 func (a *App) insertTagSuggestion() {
-	if a.tagSuggestionIdx < 0 || a.tagSuggestionIdx >= len(a.tagSuggestions) {
+	if a.modal.TagSuggestionIdx < 0 || a.modal.TagSuggestionIdx >= len(a.modal.TagSuggestions) {
 		return
 	}
 
-	tag := a.tagSuggestions[a.tagSuggestionIdx]
-	input := a.tagsInput.Value()
+	tag := a.modal.TagSuggestions[a.modal.TagSuggestionIdx]
+	input := a.modal.TagsInput.Value()
 	lastComma := strings.LastIndex(input, ",")
 
 	var newValue string
@@ -496,25 +424,25 @@ func (a *App) insertTagSuggestion() {
 		newValue = tag
 	}
 
-	a.tagsInput.SetValue(newValue)
-	a.tagsInput.SetCursor(len(newValue))
-	a.tagSuggestions = nil
-	a.tagSuggestionIdx = -1
+	a.modal.TagsInput.SetValue(newValue)
+	a.modal.TagsInput.SetCursor(len(newValue))
+	a.modal.TagSuggestions = nil
+	a.modal.TagSuggestionIdx = -1
 }
 
 // Cursor returns the current cursor position.
 func (a App) Cursor() int {
-	return a.cursor
+	return a.browser.Cursor
 }
 
 // CurrentFolderID returns the ID of the current folder (nil for root).
 func (a App) CurrentFolderID() *string {
-	return a.currentFolderID
+	return a.browser.CurrentFolderID
 }
 
 // Items returns the current list of items.
 func (a App) Items() []Item {
-	return a.items
+	return a.browser.Items
 }
 
 // YankedItem returns the item in the yank buffer, or nil if empty.
@@ -529,12 +457,12 @@ func (a App) Mode() Mode {
 
 // SortMode returns the current sort mode.
 func (a App) SortMode() SortMode {
-	return a.sortMode
+	return a.browser.SortMode
 }
 
 // FilterQuery returns the current filter query.
 func (a App) FilterQuery() string {
-	return a.filterQuery
+	return a.search.FilterQuery
 }
 
 // StatusMessage returns the current status message text.
@@ -576,12 +504,12 @@ func (a *App) SetConfirmDelete(confirm bool) {
 
 // FuzzyMatches returns the current fuzzy match results.
 func (a App) FuzzyMatches() []fuzzyMatch {
-	return a.fuzzyMatches
+	return a.search.FuzzyMatches
 }
 
 // FuzzyCursor returns the selected index in fuzzy results.
 func (a App) FuzzyCursor() int {
-	return a.fuzzyCursor
+	return a.search.FuzzyCursor
 }
 
 // Init implements tea.Model.
@@ -622,8 +550,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.mode == ModeQuickAddLoading {
 			if msg.err != nil {
 				// AI failed - save to "To Review" with URL as title
-				a.quickAddError = msg.err
-				url := a.quickAddInput.Value()
+				a.quickAdd.Error = msg.err
+				url := a.quickAdd.Input.Value()
 				folder, _ := a.store.GetOrCreateFolderByPath("To Review")
 				var folderID *string
 				if folder != nil {
@@ -643,21 +571,21 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			// AI succeeded - show confirmation
-			a.quickAddResponse = msg.response
+			a.quickAdd.Response = msg.response
 			a.mode = ModeQuickAddConfirm
 
 			// Pre-fill inputs with AI suggestion
-			a.titleInput.Reset()
-			a.titleInput.SetValue(msg.response.Title)
-			a.tagsInput.Reset()
-			a.tagsInput.SetValue(strings.Join(msg.response.Tags, ", "))
+			a.modal.TitleInput.Reset()
+			a.modal.TitleInput.SetValue(msg.response.Title)
+			a.modal.TagsInput.Reset()
+			a.modal.TagsInput.SetValue(strings.Join(msg.response.Tags, ", "))
 
 			// Build folder picker options
-			a.quickAddFolders = a.buildFolderPaths()
-			a.quickAddFolderIdx = a.findFolderIndex(msg.response.FolderPath)
+			a.quickAdd.Folders = a.buildFolderPaths()
+			a.quickAdd.FolderIdx = a.findFolderIndex(msg.response.FolderPath)
 
-			a.titleInput.Focus()
-			return a, a.titleInput.Focus()
+			a.modal.TitleInput.Focus()
+			return a, a.modal.TitleInput.Focus()
 		}
 		return a, nil
 
@@ -676,7 +604,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if key.Matches(msg, a.keys.Top) {
 			if a.lastKeyWasG {
 				// This is the second g - go to top
-				a.cursor = 0
+				a.browser.Cursor = 0
 				a.lastKeyWasG = false
 				return a, nil
 			}
@@ -717,24 +645,24 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if key.Matches(msg, a.keys.Move) {
 			a.lastKeyWasG = false
 			displayItems := a.getDisplayItems()
-			if len(displayItems) == 0 || a.cursor >= len(displayItems) {
+			if len(displayItems) == 0 || a.browser.Cursor >= len(displayItems) {
 				return a, nil
 			}
 			a.mode = ModeMove
-			a.moveFolders = a.buildFolderPaths()
-			a.moveFilteredFolders = a.moveFolders // Start with all folders
-			a.moveFilterInput.Reset()
-			a.moveFilterInput.Focus()
+			a.move.Folders = a.buildFolderPaths()
+			a.move.FilteredFolders = a.move.Folders // Start with all folders
+			a.move.FilterInput.Reset()
+			a.move.FilterInput.Focus()
 			// Find current location in folder list
-			item := displayItems[a.cursor]
+			item := displayItems[a.browser.Cursor]
 			currentPath := "/"
 			if item.IsFolder() && item.Folder.ParentID != nil {
 				currentPath = a.store.GetFolderPath(item.Folder.ParentID)
 			} else if !item.IsFolder() && item.Bookmark.FolderID != nil {
 				currentPath = a.store.GetFolderPath(item.Bookmark.FolderID)
 			}
-			a.moveFolderIdx = a.findMoveFolderIndex(currentPath)
-			return a, a.moveFilterInput.Focus()
+			a.move.FolderIdx = a.findMoveFolderIndex(currentPath)
+			return a, a.move.FilterInput.Focus()
 		}
 
 		// Reset sequence flags for any other key
@@ -746,37 +674,37 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, a.keys.Down):
 			displayItems := a.getDisplayItems()
-			if len(displayItems) > 0 && a.cursor < len(displayItems)-1 {
-				a.cursor++
+			if len(displayItems) > 0 && a.browser.Cursor < len(displayItems)-1 {
+				a.browser.Cursor++
 			}
 			a.clearMessage() // Clear message on navigation
 
 		case key.Matches(msg, a.keys.Up):
-			if a.cursor > 0 {
-				a.cursor--
+			if a.browser.Cursor > 0 {
+				a.browser.Cursor--
 			}
 			a.clearMessage() // Clear message on navigation
 
 		case key.Matches(msg, a.keys.Bottom):
 			displayItems := a.getDisplayItems()
 			if len(displayItems) > 0 {
-				a.cursor = len(displayItems) - 1
+				a.browser.Cursor = len(displayItems) - 1
 			}
 
 		case key.Matches(msg, a.keys.Right):
 			// Enter folder or open bookmark
 			displayItems := a.getDisplayItems()
-			if len(displayItems) > 0 && a.cursor < len(displayItems) {
-				item := displayItems[a.cursor]
+			if len(displayItems) > 0 && a.browser.Cursor < len(displayItems) {
+				item := displayItems[a.browser.Cursor]
 				if item.IsFolder() {
 					// Push current folder to stack
-					if a.currentFolderID != nil {
-						a.folderStack = append(a.folderStack, *a.currentFolderID)
+					if a.browser.CurrentFolderID != nil {
+						a.browser.FolderStack = append(a.browser.FolderStack, *a.browser.CurrentFolderID)
 					}
 					// Enter the folder
 					id := item.Folder.ID
-					a.currentFolderID = &id
-					a.cursor = 0
+					a.browser.CurrentFolderID = &id
+					a.browser.Cursor = 0
 					a.refreshItems()
 				} else {
 					// Open bookmark URL
@@ -786,22 +714,22 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, a.keys.Left):
 			// At root level: switch to pinned pane
-			if a.currentFolderID == nil {
+			if a.browser.CurrentFolderID == nil {
 				a.focusedPane = PanePinned
 				return a, nil
 			}
 			// Go back to parent folder
-			if len(a.folderStack) > 0 {
+			if len(a.browser.FolderStack) > 0 {
 				// Pop from stack
-				lastIdx := len(a.folderStack) - 1
-				parentID := a.folderStack[lastIdx]
-				a.folderStack = a.folderStack[:lastIdx]
-				a.currentFolderID = &parentID
+				lastIdx := len(a.browser.FolderStack) - 1
+				parentID := a.browser.FolderStack[lastIdx]
+				a.browser.FolderStack = a.browser.FolderStack[:lastIdx]
+				a.browser.CurrentFolderID = &parentID
 			} else {
 				// Back to root
-				a.currentFolderID = nil
+				a.browser.CurrentFolderID = nil
 			}
-			a.cursor = 0
+			a.browser.Cursor = 0
 			a.refreshItems()
 
 		case key.Matches(msg, a.keys.PasteAfter):
@@ -812,81 +740,79 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, a.keys.AddBookmark):
 			a.mode = ModeAddBookmark
-			a.titleInput.Reset()
-			a.urlInput.Reset()
-			a.titleInput.Focus()
-			return a, a.titleInput.Focus()
+			a.modal.TitleInput.Reset()
+			a.modal.URLInput.Reset()
+			a.modal.TitleInput.Focus()
+			return a, a.modal.TitleInput.Focus()
 
 		case key.Matches(msg, a.keys.AddFolder):
 			a.mode = ModeAddFolder
-			a.titleInput.Reset()
-			a.titleInput.Focus()
-			return a, a.titleInput.Focus()
+			a.modal.TitleInput.Reset()
+			a.modal.TitleInput.Focus()
+			return a, a.modal.TitleInput.Focus()
 
 		case key.Matches(msg, a.keys.QuickAdd):
 			// AI-powered quick add
 			a.mode = ModeQuickAdd
-			a.quickAddInput.Reset()
-			a.quickAddResponse = nil
-			a.quickAddError = nil
+			a.quickAdd.Reset()
 			// Pre-fill with clipboard contents
 			if clipContent, err := clipboard.ReadAll(); err == nil && clipContent != "" {
-				a.quickAddInput.SetValue(clipContent)
+				a.quickAdd.Input.SetValue(clipContent)
 			}
-			a.quickAddInput.Focus()
-			return a, a.quickAddInput.Focus()
+			a.quickAdd.Input.Focus()
+			return a, a.quickAdd.Input.Focus()
 
 		case key.Matches(msg, a.keys.Edit):
 			// Only edit if there's an item selected
 			displayItems := a.getDisplayItems()
-			if len(displayItems) == 0 || a.cursor >= len(displayItems) {
+			if len(displayItems) == 0 || a.browser.Cursor >= len(displayItems) {
 				return a, nil
 			}
-			item := displayItems[a.cursor]
+			item := displayItems[a.browser.Cursor]
 			if item.IsFolder() {
 				a.mode = ModeEditFolder
-				a.editItemID = item.Folder.ID
-				a.titleInput.Reset()
-				a.titleInput.SetValue(item.Folder.Name)
-				a.titleInput.Focus()
-				return a, a.titleInput.Focus()
+				a.modal.EditItemID = item.Folder.ID
+				a.modal.TitleInput.Reset()
+				a.modal.TitleInput.SetValue(item.Folder.Name)
+				a.modal.TitleInput.Focus()
+				return a, a.modal.TitleInput.Focus()
 			} else {
 				a.mode = ModeEditBookmark
-				a.editItemID = item.Bookmark.ID
-				a.titleInput.Reset()
-				a.titleInput.SetValue(item.Bookmark.Title)
-				a.urlInput.Reset()
-				a.urlInput.SetValue(item.Bookmark.URL)
-				a.titleInput.Focus()
-				return a, a.titleInput.Focus()
+				a.modal.EditItemID = item.Bookmark.ID
+				a.modal.TitleInput.Reset()
+				a.modal.TitleInput.SetValue(item.Bookmark.Title)
+				a.modal.URLInput.Reset()
+				a.modal.URLInput.SetValue(item.Bookmark.URL)
+				a.modal.TitleInput.Focus()
+				return a, a.modal.TitleInput.Focus()
 			}
 
 		case key.Matches(msg, a.keys.EditTags):
 			// Only edit tags on bookmarks
 			displayItems := a.getDisplayItems()
-			if len(displayItems) == 0 || a.cursor >= len(displayItems) {
+			if len(displayItems) == 0 || a.browser.Cursor >= len(displayItems) {
 				return a, nil
 			}
-			item := displayItems[a.cursor]
+			item := displayItems[a.browser.Cursor]
 			if item.IsFolder() {
 				// Folders don't have tags
 				return a, nil
 			}
 			a.mode = ModeEditTags
-			a.editItemID = item.Bookmark.ID
-			a.tagsInput.Reset()
+			a.modal.EditItemID = item.Bookmark.ID
+			a.modal.TagsInput.Reset()
 			// Convert tags slice to comma-separated string
-			a.tagsInput.SetValue(strings.Join(item.Bookmark.Tags, ", "))
-			a.tagsInput.Focus()
+			a.modal.TagsInput.SetValue(strings.Join(item.Bookmark.Tags, ", "))
+			a.modal.TagsInput.Focus()
 			// Initialize tag autocompletion
 			a.collectAllTags()
-			a.tagSuggestions = nil
-			a.tagSuggestionIdx = -1
-			return a, a.tagsInput.Focus()
+			a.modal.TagSuggestions = nil
+			a.modal.TagSuggestionIdx = -1
+			return a, a.modal.TagsInput.Focus()
 
 		case key.Matches(msg, a.keys.Sort):
 			// Cycle through sort modes
-			a.sortMode = (a.sortMode + 1) % 4
+			a.browser.SortMode = (a.browser.SortMode + 1) % 4
 			a.refreshItems()
 
 		case key.Matches(msg, a.keys.ToggleConfirm):
@@ -896,33 +822,33 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, a.keys.Search):
 			// Open fuzzy finder mode with GLOBAL search
 			a.mode = ModeSearch
-			a.searchInput.Reset()
-			a.searchInput.Focus()
-			a.fuzzyCursor = 0
+			a.search.Input.Reset()
+			a.search.Input.Focus()
+			a.search.FuzzyCursor = 0
 			// Gather ALL items from the entire store for fuzzy matching
-			a.allItems = []Item{}
+			a.search.AllItems = []Item{}
 			for i := range a.store.Folders {
-				a.allItems = append(a.allItems, Item{
+				a.search.AllItems = append(a.search.AllItems, Item{
 					Kind:   ItemFolder,
 					Folder: &a.store.Folders[i],
 				})
 			}
 			for i := range a.store.Bookmarks {
-				a.allItems = append(a.allItems, Item{
+				a.search.AllItems = append(a.search.AllItems, Item{
 					Kind:     ItemBookmark,
 					Bookmark: &a.store.Bookmarks[i],
 				})
 			}
 			a.updateFuzzyMatches()
-			return a, a.searchInput.Focus()
+			return a, a.search.Input.Focus()
 
 		case key.Matches(msg, a.keys.Filter):
 			// Open local filter for current folder
 			a.mode = ModeFilter
-			a.filterInput.Reset()
-			a.filterInput.SetValue(a.filterQuery) // Restore previous filter
-			a.filterInput.Focus()
-			return a, a.filterInput.Focus()
+			a.search.FilterInput.Reset()
+			a.search.FilterInput.SetValue(a.search.FilterQuery) // Restore previous filter
+			a.search.FilterInput.Focus()
+			return a, a.search.FilterInput.Focus()
 
 		case key.Matches(msg, a.keys.YankURL):
 			// Yank URL to clipboard
@@ -1027,8 +953,8 @@ func (a *App) activatePinnedItem() (tea.Model, tea.Cmd) {
 		// Navigate browser to this folder
 		a.buildFolderStack(item.Folder.ParentID)
 		id := item.Folder.ID
-		a.currentFolderID = &id
-		a.cursor = 0
+		a.browser.CurrentFolderID = &id
+		a.browser.Cursor = 0
 		a.refreshItems()
 		a.focusedPane = PaneBrowser
 		return a, nil
@@ -1084,12 +1010,12 @@ func (a *App) unpinSelectedItem() tea.Cmd {
 // Returns a command to schedule message auto-clear.
 func (a *App) togglePinCurrentItem() tea.Cmd {
 	displayItems := a.getDisplayItems()
-	if len(displayItems) == 0 || a.cursor >= len(displayItems) {
+	if len(displayItems) == 0 || a.browser.Cursor >= len(displayItems) {
 		return nil
 	}
 
 	var cmd tea.Cmd
-	item := displayItems[a.cursor]
+	item := displayItems[a.browser.Cursor]
 	if item.IsFolder() {
 		wasPinned := item.Folder.Pinned
 		if err := a.store.TogglePinFolder(item.Folder.ID); err != nil {
@@ -1160,32 +1086,32 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return a, nil
 		case tea.KeyEnter:
 			// Execute move if there are filtered results
-			if len(a.moveFilteredFolders) > 0 {
+			if len(a.move.FilteredFolders) > 0 {
 				a.executeMoveItem()
 			}
 			a.mode = ModeNormal
 			return a, nil
 		case tea.KeyUp, tea.KeyCtrlP:
-			if a.moveFolderIdx > 0 {
-				a.moveFolderIdx--
-			} else if len(a.moveFilteredFolders) > 0 {
-				a.moveFolderIdx = len(a.moveFilteredFolders) - 1
+			if a.move.FolderIdx > 0 {
+				a.move.FolderIdx--
+			} else if len(a.move.FilteredFolders) > 0 {
+				a.move.FolderIdx = len(a.move.FilteredFolders) - 1
 			}
 			return a, nil
 		case tea.KeyDown, tea.KeyCtrlN:
-			if len(a.moveFilteredFolders) > 0 {
-				a.moveFolderIdx++
-				if a.moveFolderIdx >= len(a.moveFilteredFolders) {
-					a.moveFolderIdx = 0
+			if len(a.move.FilteredFolders) > 0 {
+				a.move.FolderIdx++
+				if a.move.FolderIdx >= len(a.move.FilteredFolders) {
+					a.move.FolderIdx = 0
 				}
 			}
 			return a, nil
 		case tea.KeyTab:
 			// Tab also moves down
-			if len(a.moveFilteredFolders) > 0 {
-				a.moveFolderIdx++
-				if a.moveFolderIdx >= len(a.moveFilteredFolders) {
-					a.moveFolderIdx = 0
+			if len(a.move.FilteredFolders) > 0 {
+				a.move.FolderIdx++
+				if a.move.FolderIdx >= len(a.move.FilteredFolders) {
+					a.move.FolderIdx = 0
 				}
 			}
 			return a, nil
@@ -1193,7 +1119,7 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		// Forward to filter input and update filter
 		var cmd tea.Cmd
-		a.moveFilterInput, cmd = a.moveFilterInput.Update(msg)
+		a.move.FilterInput, cmd = a.move.FilterInput.Update(msg)
 		a.updateMoveFilter()
 		return a, cmd
 	}
@@ -1204,27 +1130,27 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case tea.KeyEsc:
 			// Cancel search
 			a.mode = ModeNormal
-			a.fuzzyMatches = nil
-			a.allItems = nil
+			a.search.FuzzyMatches = nil
+			a.search.AllItems = nil
 			return a, nil
 
 		case tea.KeyEnter:
 			// Select highlighted item: navigate to folder or bookmark location
-			if len(a.fuzzyMatches) > 0 && a.fuzzyCursor < len(a.fuzzyMatches) {
-				selectedItem := a.fuzzyMatches[a.fuzzyCursor].Item
+			if len(a.search.FuzzyMatches) > 0 && a.search.FuzzyCursor < len(a.search.FuzzyMatches) {
+				selectedItem := a.search.FuzzyMatches[a.search.FuzzyCursor].Item
 
 				if selectedItem.IsFolder() {
 					// Navigate into the selected folder
 					folderID := selectedItem.Folder.ID
-					a.folderStack = []string{}
+					a.browser.FolderStack = []string{}
 					a.buildFolderStack(selectedItem.Folder.ParentID)
-					a.currentFolderID = &folderID
-					a.cursor = 0
+					a.browser.CurrentFolderID = &folderID
+					a.browser.Cursor = 0
 					a.refreshItems()
 				} else {
 					// Navigate to bookmark's folder and position cursor on it
 					bookmark := selectedItem.Bookmark
-					a.folderStack = []string{}
+					a.browser.FolderStack = []string{}
 
 					if bookmark.FolderID != nil {
 						// Bookmark is in a folder - navigate there
@@ -1232,39 +1158,39 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 						if folder != nil {
 							a.buildFolderStack(folder.ParentID)
 						}
-						a.currentFolderID = bookmark.FolderID
+						a.browser.CurrentFolderID = bookmark.FolderID
 					} else {
 						// Bookmark is at root
-						a.currentFolderID = nil
+						a.browser.CurrentFolderID = nil
 					}
 
 					a.refreshItems()
 
 					// Find and position cursor on the bookmark
-					for i, item := range a.items {
+					for i, item := range a.browser.Items {
 						if !item.IsFolder() && item.Bookmark.ID == bookmark.ID {
-							a.cursor = i
+							a.browser.Cursor = i
 							break
 						}
 					}
 				}
 			}
 			a.mode = ModeNormal
-			a.fuzzyMatches = nil
-			a.allItems = nil
+			a.search.FuzzyMatches = nil
+			a.search.AllItems = nil
 			return a, nil
 
 		case tea.KeyDown:
 			// Navigate down in results
-			if len(a.fuzzyMatches) > 0 && a.fuzzyCursor < len(a.fuzzyMatches)-1 {
-				a.fuzzyCursor++
+			if len(a.search.FuzzyMatches) > 0 && a.search.FuzzyCursor < len(a.search.FuzzyMatches)-1 {
+				a.search.FuzzyCursor++
 			}
 			return a, nil
 
 		case tea.KeyUp:
 			// Navigate up in results
-			if a.fuzzyCursor > 0 {
-				a.fuzzyCursor--
+			if a.search.FuzzyCursor > 0 {
+				a.search.FuzzyCursor--
 			}
 			return a, nil
 		}
@@ -1273,13 +1199,13 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if msg.Type == tea.KeyRunes {
 			switch string(msg.Runes) {
 			case "j":
-				if len(a.fuzzyMatches) > 0 && a.fuzzyCursor < len(a.fuzzyMatches)-1 {
-					a.fuzzyCursor++
+				if len(a.search.FuzzyMatches) > 0 && a.search.FuzzyCursor < len(a.search.FuzzyMatches)-1 {
+					a.search.FuzzyCursor++
 				}
 				return a, nil
 			case "k":
-				if a.fuzzyCursor > 0 {
-					a.fuzzyCursor--
+				if a.search.FuzzyCursor > 0 {
+					a.search.FuzzyCursor--
 				}
 				return a, nil
 			}
@@ -1287,7 +1213,7 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		// Update search input
 		var cmd tea.Cmd
-		a.searchInput, cmd = a.searchInput.Update(msg)
+		a.search.Input, cmd = a.search.Input.Update(msg)
 		// Update fuzzy matches as user types
 		a.updateFuzzyMatches()
 		return a, cmd
@@ -1298,29 +1224,29 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch msg.Type {
 		case tea.KeyEsc:
 			// Keep filter active, just close input
-			a.filterQuery = a.filterInput.Value()
+			a.search.FilterQuery = a.search.FilterInput.Value()
 			a.applyFilter()
 			a.mode = ModeNormal
 			return a, nil
 		case tea.KeyEnter:
 			// Apply filter and close
-			a.filterQuery = a.filterInput.Value()
+			a.search.FilterQuery = a.search.FilterInput.Value()
 			a.applyFilter()
 			a.mode = ModeNormal
 			return a, nil
 		case tea.KeyBackspace:
 			// If filter is empty and backspace, clear filter entirely
-			if a.filterInput.Value() == "" {
-				a.filterQuery = ""
+			if a.search.FilterInput.Value() == "" {
+				a.search.FilterQuery = ""
 				a.applyFilter()
 			}
 		}
 
 		// Update filter input
 		var cmd tea.Cmd
-		a.filterInput, cmd = a.filterInput.Update(msg)
+		a.search.FilterInput, cmd = a.search.FilterInput.Update(msg)
 		// Live filter as user types
-		a.filterQuery = a.filterInput.Value()
+		a.search.FilterQuery = a.search.FilterInput.Value()
 		a.applyFilter()
 		return a, cmd
 	}
@@ -1332,7 +1258,7 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.mode = ModeNormal
 			return a, nil
 		case tea.KeyEnter:
-			url := a.quickAddInput.Value()
+			url := a.quickAdd.Input.Value()
 			if url == "" {
 				return a, nil
 			}
@@ -1342,7 +1268,7 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		// Forward to input
 		var cmd tea.Cmd
-		a.quickAddInput, cmd = a.quickAddInput.Update(msg)
+		a.quickAdd.Input, cmd = a.quickAdd.Input.Update(msg)
 		return a, cmd
 	}
 
@@ -1367,48 +1293,48 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return a.submitQuickAdd()
 		case tea.KeyTab:
 			// Cycle through: title -> folder -> tags -> title
-			if a.titleInput.Focused() {
-				a.titleInput.Blur()
+			if a.modal.TitleInput.Focused() {
+				a.modal.TitleInput.Blur()
 				// Focus is now on folder picker (no input to focus)
-			} else if a.tagsInput.Focused() {
-				a.tagsInput.Blur()
-				a.titleInput.Focus()
-				return a, a.titleInput.Focus()
+			} else if a.modal.TagsInput.Focused() {
+				a.modal.TagsInput.Blur()
+				a.modal.TitleInput.Focus()
+				return a, a.modal.TitleInput.Focus()
 			} else {
 				// Was on folder picker, move to tags
-				a.tagsInput.Focus()
-				return a, a.tagsInput.Focus()
+				a.modal.TagsInput.Focus()
+				return a, a.modal.TagsInput.Focus()
 			}
 			return a, nil
 		case tea.KeyUp:
 			// Navigate folder picker up (when not in text input)
-			if !a.titleInput.Focused() && !a.tagsInput.Focused() {
-				if a.quickAddFolderIdx > 0 {
-					a.quickAddFolderIdx--
+			if !a.modal.TitleInput.Focused() && !a.modal.TagsInput.Focused() {
+				if a.quickAdd.FolderIdx > 0 {
+					a.quickAdd.FolderIdx--
 				}
 			}
 			return a, nil
 		case tea.KeyDown:
 			// Navigate folder picker down (when not in text input)
-			if !a.titleInput.Focused() && !a.tagsInput.Focused() {
-				if a.quickAddFolderIdx < len(a.quickAddFolders)-1 {
-					a.quickAddFolderIdx++
+			if !a.modal.TitleInput.Focused() && !a.modal.TagsInput.Focused() {
+				if a.quickAdd.FolderIdx < len(a.quickAdd.Folders)-1 {
+					a.quickAdd.FolderIdx++
 				}
 			}
 			return a, nil
 		}
 
 		// Handle j/k for folder navigation when not in text input
-		if msg.Type == tea.KeyRunes && !a.titleInput.Focused() && !a.tagsInput.Focused() {
+		if msg.Type == tea.KeyRunes && !a.modal.TitleInput.Focused() && !a.modal.TagsInput.Focused() {
 			switch string(msg.Runes) {
 			case "j":
-				if a.quickAddFolderIdx < len(a.quickAddFolders)-1 {
-					a.quickAddFolderIdx++
+				if a.quickAdd.FolderIdx < len(a.quickAdd.Folders)-1 {
+					a.quickAdd.FolderIdx++
 				}
 				return a, nil
 			case "k":
-				if a.quickAddFolderIdx > 0 {
-					a.quickAddFolderIdx--
+				if a.quickAdd.FolderIdx > 0 {
+					a.quickAdd.FolderIdx--
 				}
 				return a, nil
 			}
@@ -1416,10 +1342,10 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		// Forward to active text input
 		var cmd tea.Cmd
-		if a.titleInput.Focused() {
-			a.titleInput, cmd = a.titleInput.Update(msg)
-		} else if a.tagsInput.Focused() {
-			a.tagsInput, cmd = a.tagsInput.Update(msg)
+		if a.modal.TitleInput.Focused() {
+			a.modal.TitleInput, cmd = a.modal.TitleInput.Update(msg)
+		} else if a.modal.TagsInput.Focused() {
+			a.modal.TagsInput, cmd = a.modal.TagsInput.Update(msg)
 		}
 		return a, cmd
 	}
@@ -1441,32 +1367,32 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case ModeAddBookmark, ModeEditBookmark:
 		// Handle Tab to switch between inputs
 		if msg.Type == tea.KeyTab {
-			if a.titleInput.Focused() {
-				a.titleInput.Blur()
-				a.urlInput.Focus()
-				return a, a.urlInput.Focus()
+			if a.modal.TitleInput.Focused() {
+				a.modal.TitleInput.Blur()
+				a.modal.URLInput.Focus()
+				return a, a.modal.URLInput.Focus()
 			} else {
-				a.urlInput.Blur()
-				a.titleInput.Focus()
-				return a, a.titleInput.Focus()
+				a.modal.URLInput.Blur()
+				a.modal.TitleInput.Focus()
+				return a, a.modal.TitleInput.Focus()
 			}
 		}
 
-		if a.titleInput.Focused() {
-			a.titleInput, cmd = a.titleInput.Update(msg)
+		if a.modal.TitleInput.Focused() {
+			a.modal.TitleInput, cmd = a.modal.TitleInput.Update(msg)
 		} else {
-			a.urlInput, cmd = a.urlInput.Update(msg)
+			a.modal.URLInput, cmd = a.modal.URLInput.Update(msg)
 		}
 	case ModeAddFolder, ModeEditFolder:
-		a.titleInput, cmd = a.titleInput.Update(msg)
+		a.modal.TitleInput, cmd = a.modal.TitleInput.Update(msg)
 	case ModeEditTags:
 		// Handle Tab for tag autocompletion
 		if msg.Type == tea.KeyTab {
-			if len(a.tagSuggestions) > 0 {
+			if len(a.modal.TagSuggestions) > 0 {
 				// Cycle through suggestions
-				a.tagSuggestionIdx++
-				if a.tagSuggestionIdx >= len(a.tagSuggestions) {
-					a.tagSuggestionIdx = 0
+				a.modal.TagSuggestionIdx++
+				if a.modal.TagSuggestionIdx >= len(a.modal.TagSuggestions) {
+					a.modal.TagSuggestionIdx = 0
 				}
 				// Insert selected suggestion
 				a.insertTagSuggestion()
@@ -1475,24 +1401,24 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 		// Handle up/down for suggestion navigation
-		if msg.Type == tea.KeyUp && len(a.tagSuggestions) > 0 {
-			if a.tagSuggestionIdx > 0 {
-				a.tagSuggestionIdx--
+		if msg.Type == tea.KeyUp && len(a.modal.TagSuggestions) > 0 {
+			if a.modal.TagSuggestionIdx > 0 {
+				a.modal.TagSuggestionIdx--
 			} else {
-				a.tagSuggestionIdx = len(a.tagSuggestions) - 1
+				a.modal.TagSuggestionIdx = len(a.modal.TagSuggestions) - 1
 			}
 			return a, nil
 		}
-		if msg.Type == tea.KeyDown && len(a.tagSuggestions) > 0 {
-			a.tagSuggestionIdx++
-			if a.tagSuggestionIdx >= len(a.tagSuggestions) {
-				a.tagSuggestionIdx = 0
+		if msg.Type == tea.KeyDown && len(a.modal.TagSuggestions) > 0 {
+			a.modal.TagSuggestionIdx++
+			if a.modal.TagSuggestionIdx >= len(a.modal.TagSuggestions) {
+				a.modal.TagSuggestionIdx = 0
 			}
 			return a, nil
 		}
 
 		// Update input and then update suggestions
-		a.tagsInput, cmd = a.tagsInput.Update(msg)
+		a.modal.TagsInput, cmd = a.modal.TagsInput.Update(msg)
 		a.updateTagSuggestions()
 	}
 
@@ -1503,7 +1429,7 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (a App) submitModal() (tea.Model, tea.Cmd) {
 	switch a.mode {
 	case ModeAddFolder:
-		name := a.titleInput.Value()
+		name := a.modal.TitleInput.Value()
 		if name == "" {
 			// Don't submit with empty name
 			return a, nil
@@ -1512,7 +1438,7 @@ func (a App) submitModal() (tea.Model, tea.Cmd) {
 		// Create and add the folder
 		newFolder := model.NewFolder(model.NewFolderParams{
 			Name:     name,
-			ParentID: a.currentFolderID,
+			ParentID: a.browser.CurrentFolderID,
 		})
 		a.store.AddFolder(newFolder)
 		a.refreshItems()
@@ -1521,8 +1447,8 @@ func (a App) submitModal() (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case ModeAddBookmark:
-		title := a.titleInput.Value()
-		url := a.urlInput.Value()
+		title := a.modal.TitleInput.Value()
+		url := a.modal.URLInput.Value()
 		if title == "" || url == "" {
 			// Don't submit with empty fields
 			return a, nil
@@ -1532,7 +1458,7 @@ func (a App) submitModal() (tea.Model, tea.Cmd) {
 		newBookmark := model.NewBookmark(model.NewBookmarkParams{
 			Title:    title,
 			URL:      url,
-			FolderID: a.currentFolderID,
+			FolderID: a.browser.CurrentFolderID,
 			Tags:     []string{},
 		})
 		a.store.AddBookmark(newBookmark)
@@ -1542,14 +1468,14 @@ func (a App) submitModal() (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case ModeEditFolder:
-		name := a.titleInput.Value()
+		name := a.modal.TitleInput.Value()
 		if name == "" {
 			// Don't submit with empty name
 			return a, nil
 		}
 
 		// Find and update the folder
-		folder := a.store.GetFolderByID(a.editItemID)
+		folder := a.store.GetFolderByID(a.modal.EditItemID)
 		if folder != nil {
 			folder.Name = name
 		}
@@ -1558,15 +1484,15 @@ func (a App) submitModal() (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case ModeEditBookmark:
-		title := a.titleInput.Value()
-		url := a.urlInput.Value()
+		title := a.modal.TitleInput.Value()
+		url := a.modal.URLInput.Value()
 		if title == "" || url == "" {
 			// Don't submit with empty fields
 			return a, nil
 		}
 
 		// Find and update the bookmark
-		bookmark := a.store.GetBookmarkByID(a.editItemID)
+		bookmark := a.store.GetBookmarkByID(a.modal.EditItemID)
 		if bookmark != nil {
 			bookmark.Title = title
 			bookmark.URL = url
@@ -1577,7 +1503,7 @@ func (a App) submitModal() (tea.Model, tea.Cmd) {
 
 	case ModeEditTags:
 		// Parse comma-separated tags
-		tagsStr := a.tagsInput.Value()
+		tagsStr := a.modal.TagsInput.Value()
 		var tags []string
 		if tagsStr != "" {
 			for _, tag := range strings.Split(tagsStr, ",") {
@@ -1589,7 +1515,7 @@ func (a App) submitModal() (tea.Model, tea.Cmd) {
 		}
 
 		// Find and update the bookmark
-		bookmark := a.store.GetBookmarkByID(a.editItemID)
+		bookmark := a.store.GetBookmarkByID(a.modal.EditItemID)
 		if bookmark != nil {
 			bookmark.Tags = tags
 		}
@@ -1603,8 +1529,8 @@ func (a App) submitModal() (tea.Model, tea.Cmd) {
 
 // submitQuickAdd saves the bookmark from AI quick add confirmation.
 func (a App) submitQuickAdd() (tea.Model, tea.Cmd) {
-	title := a.titleInput.Value()
-	url := a.quickAddInput.Value()
+	title := a.modal.TitleInput.Value()
+	url := a.quickAdd.Input.Value()
 
 	if title == "" || url == "" {
 		return a, nil
@@ -1612,7 +1538,7 @@ func (a App) submitQuickAdd() (tea.Model, tea.Cmd) {
 
 	// Parse tags
 	var tags []string
-	tagsStr := a.tagsInput.Value()
+	tagsStr := a.modal.TagsInput.Value()
 	if tagsStr != "" {
 		for _, tag := range strings.Split(tagsStr, ",") {
 			tag = strings.TrimSpace(tag)
@@ -1624,8 +1550,8 @@ func (a App) submitQuickAdd() (tea.Model, tea.Cmd) {
 
 	// Get or create the selected folder
 	var folderID *string
-	if a.quickAddFolderIdx > 0 && a.quickAddFolderIdx < len(a.quickAddFolders) {
-		folderPath := a.quickAddFolders[a.quickAddFolderIdx]
+	if a.quickAdd.FolderIdx > 0 && a.quickAdd.FolderIdx < len(a.quickAdd.Folders) {
+		folderPath := a.quickAdd.Folders[a.quickAdd.FolderIdx]
 		folder, _ := a.store.GetOrCreateFolderByPath(folderPath)
 		if folder != nil {
 			folderID = &folder.ID
@@ -1649,10 +1575,10 @@ func (a App) submitQuickAdd() (tea.Model, tea.Cmd) {
 // yankCurrentItem copies the current item to the yank buffer.
 func (a *App) yankCurrentItem() {
 	displayItems := a.getDisplayItems()
-	if len(displayItems) == 0 || a.cursor >= len(displayItems) {
+	if len(displayItems) == 0 || a.browser.Cursor >= len(displayItems) {
 		return
 	}
-	item := displayItems[a.cursor]
+	item := displayItems[a.browser.Cursor]
 	a.yankedItem = &item
 	a.setStatus("Yanked: " + item.Title())
 }
@@ -1661,19 +1587,19 @@ func (a *App) yankCurrentItem() {
 // Shows confirmation dialog if confirmDelete is enabled.
 func (a *App) cutCurrentItem() {
 	displayItems := a.getDisplayItems()
-	if len(displayItems) == 0 || a.cursor >= len(displayItems) {
+	if len(displayItems) == 0 || a.browser.Cursor >= len(displayItems) {
 		return
 	}
 
-	item := displayItems[a.cursor]
-	a.cutMode = true
+	item := displayItems[a.browser.Cursor]
+	a.modal.CutMode = true
 
 	// Show confirmation if enabled
 	if a.confirmDelete {
 		if item.IsFolder() {
-			a.editItemID = item.Folder.ID
+			a.modal.EditItemID = item.Folder.ID
 		} else {
-			a.editItemID = item.Bookmark.ID
+			a.modal.EditItemID = item.Bookmark.ID
 		}
 		a.mode = ModeConfirmDelete
 		return
@@ -1691,8 +1617,8 @@ func (a *App) cutCurrentItem() {
 	}
 
 	a.refreshItems()
-	if a.cursor >= len(a.items) && a.cursor > 0 {
-		a.cursor--
+	if a.browser.Cursor >= len(a.browser.Items) && a.browser.Cursor > 0 {
+		a.browser.Cursor--
 	}
 }
 
@@ -1700,19 +1626,19 @@ func (a *App) cutCurrentItem() {
 // Shows confirmation dialog if confirmDelete is enabled.
 func (a *App) deleteCurrentItem() {
 	displayItems := a.getDisplayItems()
-	if len(displayItems) == 0 || a.cursor >= len(displayItems) {
+	if len(displayItems) == 0 || a.browser.Cursor >= len(displayItems) {
 		return
 	}
 
-	item := displayItems[a.cursor]
-	a.cutMode = false
+	item := displayItems[a.browser.Cursor]
+	a.modal.CutMode = false
 
 	// Show confirmation if enabled
 	if a.confirmDelete {
 		if item.IsFolder() {
-			a.editItemID = item.Folder.ID
+			a.modal.EditItemID = item.Folder.ID
 		} else {
-			a.editItemID = item.Bookmark.ID
+			a.modal.EditItemID = item.Bookmark.ID
 		}
 		a.mode = ModeConfirmDelete
 		return
@@ -1728,8 +1654,8 @@ func (a *App) deleteCurrentItem() {
 	}
 
 	a.refreshItems()
-	if a.cursor >= len(a.items) && a.cursor > 0 {
-		a.cursor--
+	if a.browser.Cursor >= len(a.browser.Items) && a.browser.Cursor > 0 {
+		a.browser.Cursor--
 	}
 }
 
@@ -1739,39 +1665,39 @@ func (a *App) confirmDeleteItem() {
 	var title string
 
 	// Try as folder first
-	folder := a.store.GetFolderByID(a.editItemID)
+	folder := a.store.GetFolderByID(a.modal.EditItemID)
 	if folder != nil {
 		title = folder.Name
-		if a.cutMode {
+		if a.modal.CutMode {
 			// Make a copy before deleting
 			folderCopy := *folder
 			item := Item{Kind: ItemFolder, Folder: &folderCopy}
 			a.yankedItem = &item
 		}
-		a.store.RemoveFolderByID(a.editItemID)
+		a.store.RemoveFolderByID(a.modal.EditItemID)
 	} else {
 		// Try as bookmark
-		bookmark := a.store.GetBookmarkByID(a.editItemID)
+		bookmark := a.store.GetBookmarkByID(a.modal.EditItemID)
 		if bookmark == nil {
 			return
 		}
 		title = bookmark.Title
-		if a.cutMode {
+		if a.modal.CutMode {
 			// Make a copy before deleting
 			bookmarkCopy := *bookmark
 			item := Item{Kind: ItemBookmark, Bookmark: &bookmarkCopy}
 			a.yankedItem = &item
 		}
-		a.store.RemoveBookmarkByID(a.editItemID)
+		a.store.RemoveBookmarkByID(a.modal.EditItemID)
 	}
 
 	// Refresh items and adjust cursor
 	a.refreshItems()
-	if a.cursor >= len(a.items) && a.cursor > 0 {
-		a.cursor--
+	if a.browser.Cursor >= len(a.browser.Items) && a.browser.Cursor > 0 {
+		a.browser.Cursor--
 	}
 
-	if a.cutMode {
+	if a.modal.CutMode {
 		a.setStatus("Cut: " + title)
 	} else {
 		a.setStatus("Deleted: " + title)
@@ -1780,17 +1706,17 @@ func (a *App) confirmDeleteItem() {
 
 // executeMoveItem moves the current item to the selected folder.
 func (a *App) executeMoveItem() {
-	if a.moveFolderIdx < 0 || a.moveFolderIdx >= len(a.moveFilteredFolders) {
+	if a.move.FolderIdx < 0 || a.move.FolderIdx >= len(a.move.FilteredFolders) {
 		return
 	}
 
 	displayItems := a.getDisplayItems()
-	if len(displayItems) == 0 || a.cursor >= len(displayItems) {
+	if len(displayItems) == 0 || a.browser.Cursor >= len(displayItems) {
 		return
 	}
 
-	item := displayItems[a.cursor]
-	targetPath := a.moveFilteredFolders[a.moveFolderIdx]
+	item := displayItems[a.browser.Cursor]
+	targetPath := a.move.FilteredFolders[a.move.FolderIdx]
 
 	// Resolve target folder ID (nil for root "/")
 	var targetFolderID *string
@@ -1829,8 +1755,8 @@ func (a *App) executeMoveItem() {
 	a.refreshPinnedItems()
 
 	// Adjust cursor if needed
-	if a.cursor >= len(a.items) && a.cursor > 0 {
-		a.cursor--
+	if a.browser.Cursor >= len(a.browser.Items) && a.browser.Cursor > 0 {
+		a.browser.Cursor--
 	}
 }
 
@@ -1860,9 +1786,9 @@ func (a *App) pasteItem(before bool) {
 	}
 
 	// Calculate insert position
-	insertIdx := a.cursor
-	if !before && len(a.items) > 0 {
-		insertIdx = a.cursor + 1
+	insertIdx := a.browser.Cursor
+	if !before && len(a.browser.Items) > 0 {
+		insertIdx = a.browser.Cursor + 1
 	}
 
 	title := a.yankedItem.Title()
@@ -1871,12 +1797,12 @@ func (a *App) pasteItem(before bool) {
 		// Create a copy with new ID
 		newFolder := model.NewFolder(model.NewFolderParams{
 			Name:     a.yankedItem.Folder.Name,
-			ParentID: a.currentFolderID,
+			ParentID: a.browser.CurrentFolderID,
 		})
 
 		// Count folders in current view to find insert position
 		folderCount := 0
-		for _, item := range a.items {
+		for _, item := range a.browser.Items {
 			if item.IsFolder() {
 				folderCount++
 			}
@@ -1893,13 +1819,13 @@ func (a *App) pasteItem(before bool) {
 		newBookmark := model.NewBookmark(model.NewBookmarkParams{
 			Title:    a.yankedItem.Bookmark.Title,
 			URL:      a.yankedItem.Bookmark.URL,
-			FolderID: a.currentFolderID,
+			FolderID: a.browser.CurrentFolderID,
 			Tags:     a.yankedItem.Bookmark.Tags,
 		})
 
 		// Count folders to calculate bookmark insert position
 		folderCount := 0
-		for _, item := range a.items {
+		for _, item := range a.browser.Items {
 			if item.IsFolder() {
 				folderCount++
 			}
@@ -1942,11 +1868,11 @@ func openURLCmd(url string) tea.Cmd {
 // openBookmark opens the selected bookmark URL in default browser.
 func (a App) openBookmark() (tea.Model, tea.Cmd) {
 	displayItems := a.getDisplayItems()
-	if len(displayItems) == 0 || a.cursor >= len(displayItems) {
+	if len(displayItems) == 0 || a.browser.Cursor >= len(displayItems) {
 		return a, nil
 	}
 
-	item := displayItems[a.cursor]
+	item := displayItems[a.browser.Cursor]
 	if item.IsFolder() {
 		return a, nil
 	}
@@ -1968,11 +1894,11 @@ type clipboardSuccessMsg struct{}
 // yankURLToClipboard copies the selected bookmark URL to system clipboard.
 func (a App) yankURLToClipboard() (tea.Model, tea.Cmd) {
 	displayItems := a.getDisplayItems()
-	if len(displayItems) == 0 || a.cursor >= len(displayItems) {
+	if len(displayItems) == 0 || a.browser.Cursor >= len(displayItems) {
 		return a, nil
 	}
 
-	item := displayItems[a.cursor]
+	item := displayItems[a.browser.Cursor]
 	if item.IsFolder() {
 		return a, nil
 	}
@@ -1995,31 +1921,31 @@ func (a App) View() string {
 
 // applyFilter filters current items based on filterQuery using fuzzy matching.
 func (a *App) applyFilter() {
-	if a.filterQuery == "" {
-		a.filteredItems = nil
+	if a.search.FilterQuery == "" {
+		a.search.FilteredItems = nil
 		return
 	}
 
 	// Use fuzzy matching on current folder items
-	matches := fuzzy.FindFrom(a.filterQuery, itemStrings(a.items))
-	a.filteredItems = make([]Item, len(matches))
+	matches := fuzzy.FindFrom(a.search.FilterQuery, itemStrings(a.browser.Items))
+	a.search.FilteredItems = make([]Item, len(matches))
 	for i, m := range matches {
-		a.filteredItems[i] = a.items[m.Index]
+		a.search.FilteredItems[i] = a.browser.Items[m.Index]
 	}
 
 	// Reset cursor if out of bounds
 	displayItems := a.getDisplayItems()
-	if a.cursor >= len(displayItems) {
-		a.cursor = 0
+	if a.browser.Cursor >= len(displayItems) {
+		a.browser.Cursor = 0
 	}
 }
 
 // getDisplayItems returns filtered items if filter is active, otherwise all items.
 func (a *App) getDisplayItems() []Item {
-	if a.filterQuery != "" && a.filteredItems != nil {
-		return a.filteredItems
+	if a.search.FilterQuery != "" && a.search.FilteredItems != nil {
+		return a.search.FilteredItems
 	}
-	return a.items
+	return a.browser.Items
 }
 
 // buildFolderPaths returns all folder paths in the store.
@@ -2041,7 +1967,7 @@ func (a *App) collectFolderPaths(paths *[]string, parentID *string, prefix strin
 
 // findFolderIndex finds the index of a folder path in quickAddFolders.
 func (a *App) findFolderIndex(path string) int {
-	for i, p := range a.quickAddFolders {
+	for i, p := range a.quickAdd.Folders {
 		if p == path {
 			return i
 		}
@@ -2052,7 +1978,7 @@ func (a *App) findFolderIndex(path string) int {
 
 // findMoveFolderIndex finds the index of a folder path in moveFilteredFolders.
 func (a *App) findMoveFolderIndex(path string) int {
-	for i, p := range a.moveFilteredFolders {
+	for i, p := range a.move.FilteredFolders {
 		if p == path {
 			return i
 		}
@@ -2063,20 +1989,20 @@ func (a *App) findMoveFolderIndex(path string) int {
 
 // updateMoveFilter filters moveFolders based on the filter input.
 func (a *App) updateMoveFilter() {
-	query := strings.ToLower(a.moveFilterInput.Value())
+	query := strings.ToLower(a.move.FilterInput.Value())
 	if query == "" {
-		a.moveFilteredFolders = a.moveFolders
+		a.move.FilteredFolders = a.move.Folders
 	} else {
-		a.moveFilteredFolders = nil
-		for _, folder := range a.moveFolders {
+		a.move.FilteredFolders = nil
+		for _, folder := range a.move.Folders {
 			if strings.Contains(strings.ToLower(folder), query) {
-				a.moveFilteredFolders = append(a.moveFilteredFolders, folder)
+				a.move.FilteredFolders = append(a.move.FilteredFolders, folder)
 			}
 		}
 	}
 	// Reset index if out of bounds
-	if a.moveFolderIdx >= len(a.moveFilteredFolders) {
-		a.moveFolderIdx = 0
+	if a.move.FolderIdx >= len(a.move.FilteredFolders) {
+		a.move.FolderIdx = 0
 	}
 }
 
