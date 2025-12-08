@@ -8,23 +8,31 @@ func TestCalculateModalWidth(t *testing.T) {
 	tests := []struct {
 		name          string
 		terminalWidth int
-		baseWidth     int
+		widthPercent  int
 		want          int
 	}{
-		{"large terminal uses base", 120, 50, 50},
-		{"at threshold uses base", 70, 50, 50},
-		{"below threshold responsive", 60, 50, 50}, // 60 - 10 = 50
-		{"small terminal", 50, 60, 40},             // 50 - 10 = 40
-		{"very small terminal", 20, 50, 10},        // 20 - 10 = 10
-		{"tiny terminal clamps to 1", 5, 50, 1},    // 5 - 10 = -5, clamp to 1
+		// 200*40/100=80, at MaxWidth
+		{"wide terminal at max", 200, 40, 80},
+		// 150*50/100=75, within bounds
+		{"large terminal large percent", 150, 50, 75},
+		// 120*40/100=48, but MinWidth=50
+		{"medium terminal clamps to min", 120, 40, 50},
+		// 100*50/100=50, at MinWidth
+		{"at min width", 100, 50, 50},
+		// 50*40/100=20, MinWidth=50, but terminal-4=46, so 46
+		{"small terminal clamps to terminal", 50, 40, 46},
+		// 20*40/100=8, MinWidth=50, but terminal-4=16, so 16
+		{"very small terminal", 20, 40, 16},
+		// 5*40/100=2, MinWidth=50, but terminal-4=1, so 1
+		{"tiny terminal clamps to 1", 5, 40, 1},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := CalculateModalWidth(tt.terminalWidth, tt.baseWidth, cfg)
+			got := CalculateModalWidth(tt.terminalWidth, tt.widthPercent, cfg)
 			if got != tt.want {
-				t.Errorf("CalculateModalWidth(%d, %d) = %d, want %d",
-					tt.terminalWidth, tt.baseWidth, got, tt.want)
+				t.Errorf("CalculateModalWidth(%d, %d%%) = %d, want %d",
+					tt.terminalWidth, tt.widthPercent, got, tt.want)
 			}
 		})
 	}

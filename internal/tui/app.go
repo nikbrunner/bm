@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"net/url"
 	"os/exec"
 	"runtime"
 	"sort"
@@ -12,6 +13,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/nikbrunner/bm/internal/ai"
 	"github.com/nikbrunner/bm/internal/model"
+	"github.com/nikbrunner/bm/internal/storage"
 	"github.com/nikbrunner/bm/internal/tui/layout"
 	"github.com/sahilm/fuzzy"
 )
@@ -36,10 +38,11 @@ const (
 	ModeSearch
 	ModeFilter // Local filter for current folder
 	ModeHelp
-	ModeQuickAdd        // URL input for AI quick add
-	ModeQuickAddLoading // Waiting for AI response
-	ModeQuickAddConfirm // Review/edit AI suggestion
-	ModeMove            // Move item to different folder
+	ModeQuickAdd         // URL input for AI quick add
+	ModeQuickAddLoading  // Waiting for AI response
+	ModeQuickAddConfirm  // Review/edit AI suggestion
+	ModeReadLaterLoading // Waiting for AI response for read later
+	ModeMove             // Move item to different folder
 )
 
 // SortMode represents the current sort mode.
@@ -108,6 +111,7 @@ func (is itemStrings) Len() int {
 // App is the main bubbletea model for the bookmark manager.
 type App struct {
 	store        *model.Store
+	config       *storage.Config // app settings (quick add folder, etc.)
 	keys         KeyMap
 	styles       Styles
 	layoutConfig layout.LayoutConfig
@@ -136,6 +140,9 @@ type App struct {
 	// Quick add (AI-powered) state
 	quickAdd QuickAddState
 
+	// Read later state (URL being processed)
+	readLaterURL string
+
 	// Move state
 	move MoveState
 
@@ -154,6 +161,7 @@ type App struct {
 // AppParams holds parameters for creating a new App.
 type AppParams struct {
 	Store        *model.Store
+	Config       *storage.Config      // optional, uses default if nil
 	Keys         *KeyMap              // optional, uses default if nil
 	Styles       *Styles              // optional, uses default if nil
 	LayoutConfig *layout.LayoutConfig // optional, uses default if nil
@@ -161,6 +169,11 @@ type AppParams struct {
 
 // NewApp creates a new App with the given parameters.
 func NewApp(params AppParams) App {
+	cfg := storage.DefaultConfig()
+	if params.Config != nil {
+		cfg = *params.Config
+	}
+
 	keys := DefaultKeyMap()
 	if params.Keys != nil {
 		keys = *params.Keys
@@ -178,6 +191,7 @@ func NewApp(params AppParams) App {
 
 	app := App{
 		store:         params.Store,
+		config:        &cfg,
 		keys:          keys,
 		styles:        styles,
 		layoutConfig:  layoutCfg,
@@ -595,6 +609,49 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.modal.TitleInput.Focus()
 			return a, a.modal.TitleInput.Focus()
 		}
+
+		// Handle AI response for read later
+		if a.mode == ModeReadLaterLoading {
+			bookmarkURL := a.readLaterURL
+			a.readLaterURL = ""
+			a.mode = ModeNormal
+
+			// Get or create the quick add folder
+			folder, _ := a.store.GetOrCreateFolderByPath(a.config.QuickAddFolder)
+			var folderID *string
+			if folder != nil {
+				folderID = &folder.ID
+			}
+
+			var title string
+			var tags []string
+
+			if msg.err != nil {
+				// AI failed - use URL as title
+				title = bookmarkURL
+				tags = []string{}
+				a.setStatus("AI unavailable - saved with URL as title")
+			} else {
+				// AI succeeded
+				title = msg.response.Title
+				tags = msg.response.Tags
+			}
+
+			newBookmark := model.NewBookmark(model.NewBookmarkParams{
+				Title:    title,
+				URL:      bookmarkURL,
+				FolderID: folderID,
+				Tags:     tags,
+			})
+			a.store.AddBookmark(newBookmark)
+			a.refreshItems()
+
+			if msg.err == nil {
+				cmd := a.setMessage(MessageSuccess, "Added to "+a.config.QuickAddFolder+": "+title)
+				return a, cmd
+			}
+			return a, nil
+		}
 		return a, nil
 
 	case tea.KeyMsg:
@@ -769,6 +826,30 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			a.quickAdd.Input.Focus()
 			return a, a.quickAdd.Input.Focus()
+
+		case key.Matches(msg, a.keys.ReadLater):
+			// Quick add to Read Later from clipboard
+			clipContent, err := clipboard.ReadAll()
+			if err != nil {
+				cmd := a.setMessage(MessageError, "Failed to read clipboard")
+				return a, cmd
+			}
+			clipContent = strings.TrimSpace(clipContent)
+			if clipContent == "" {
+				cmd := a.setMessage(MessageError, "No URL in clipboard")
+				return a, cmd
+			}
+			// Validate URL
+			parsedURL, err := url.Parse(clipContent)
+			if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
+				cmd := a.setMessage(MessageError, "Invalid URL in clipboard")
+				return a, cmd
+			}
+			// Start AI-powered quick add to Read Later
+			a.readLaterURL = clipContent
+			a.mode = ModeReadLaterLoading
+			cmd := a.setMessage(MessageInfo, "Adding to "+a.config.QuickAddFolder+"...")
+			return a, tea.Batch(cmd, a.callAICmd(clipContent))
 
 		case key.Matches(msg, a.keys.Edit):
 			// Only edit if there's an item selected
@@ -1285,6 +1366,17 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Only allow Esc to cancel
 		if msg.Type == tea.KeyEsc {
 			a.mode = ModeNormal
+			return a, nil
+		}
+		return a, nil
+	}
+
+	// Handle read later loading mode (no user input)
+	if a.mode == ModeReadLaterLoading {
+		// Only allow Esc to cancel
+		if msg.Type == tea.KeyEsc {
+			a.mode = ModeNormal
+			a.readLaterURL = ""
 			return a, nil
 		}
 		return a, nil

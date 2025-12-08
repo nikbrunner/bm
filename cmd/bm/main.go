@@ -2,13 +2,16 @@ package main
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"runtime"
 	"strings"
 	"time"
 
+	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/nikbrunner/bm/internal/ai"
 	"github.com/nikbrunner/bm/internal/exporter"
 	"github.com/nikbrunner/bm/internal/importer"
 	"github.com/nikbrunner/bm/internal/model"
@@ -23,6 +26,9 @@ func main() {
 		switch os.Args[1] {
 		case "help", "--help", "-h":
 			printHelp()
+			return
+		case "add":
+			runAdd(os.Args[2:])
 			return
 		case "init":
 			runInit()
@@ -63,11 +69,17 @@ func printHelp() {
 Usage:
   bm                    Open interactive TUI
   bm <query>            Quick search → select → open
+  bm add                Quick add URL from clipboard to Read Later
   bm init               Create config with sample data
   bm reset              Clear all data (requires confirmation)
   bm import <file>      Import bookmarks from HTML
   bm export [path]      Export bookmarks to HTML
   bm help               Show this help
+
+Quick Add Options:
+  bm add                Read URL from clipboard
+  bm add --url URL      Use specified URL
+  bm add --title TITLE  Override AI-generated title
 
 TUI Keybindings:
   Navigation:
@@ -78,6 +90,7 @@ TUI Keybindings:
   Actions:
     l/Enter     Open bookmark / enter folder
     o           Open bookmark in browser
+    L           Quick add from clipboard to Read Later
     m           Pin/unpin item
     Y           Copy URL to clipboard
     /           Global fuzzy search
@@ -98,27 +111,40 @@ TUI Keybindings:
     q           Quit
 
 Data Storage:
-  ~/.config/bm/bookmarks.json
+  ~/.config/bm/bookmarks.json   Bookmark data
+  ~/.config/bm/config.json      Settings (quick add folder, etc.)
 `
 	fmt.Print(help)
 }
 
 // runTUI runs the full interactive TUI.
 func runTUI() {
-	configPath, err := storage.DefaultConfigPath()
+	dataPath, err := storage.DefaultConfigPath()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error getting data path: %v\n", err)
+		os.Exit(1)
+	}
+
+	configPath, err := storage.DefaultConfigFilePath()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error getting config path: %v\n", err)
 		os.Exit(1)
 	}
 
-	jsonStorage := storage.NewJSONStorage(configPath)
+	jsonStorage := storage.NewJSONStorage(dataPath)
 	data, err := jsonStorage.Load()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error loading bookmarks: %v\n", err)
 		os.Exit(1)
 	}
 
-	app := tui.NewApp(tui.AppParams{Store: data})
+	config, err := storage.LoadConfig(configPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
+		os.Exit(1)
+	}
+
+	app := tui.NewApp(tui.AppParams{Store: data, Config: config})
 	p := tea.NewProgram(app, tea.WithAltScreen())
 	finalModel, err := p.Run()
 	if err != nil {
@@ -294,17 +320,161 @@ func runExport(outputPath string) {
 		len(store.Bookmarks), len(store.Folders), outputPath)
 }
 
-// runInit creates the config file with sample data.
-func runInit() {
-	configPath, err := storage.DefaultConfigPath()
+// runAdd handles the quick add command.
+func runAdd(args []string) {
+	// Parse flags
+	var urlFlag, titleFlag string
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--url":
+			if i+1 < len(args) {
+				urlFlag = args[i+1]
+				i++
+			}
+		case "--title":
+			if i+1 < len(args) {
+				titleFlag = args[i+1]
+				i++
+			}
+		}
+	}
+
+	// Get URL from flag or clipboard
+	bookmarkURL := urlFlag
+	if bookmarkURL == "" {
+		var err error
+		bookmarkURL, err = clipboard.ReadAll()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading clipboard: %v\n", err)
+			os.Exit(1)
+		}
+		bookmarkURL = strings.TrimSpace(bookmarkURL)
+	}
+
+	if bookmarkURL == "" {
+		fmt.Fprintf(os.Stderr, "No URL found in clipboard\n")
+		os.Exit(1)
+	}
+
+	// Validate URL
+	parsedURL, err := url.Parse(bookmarkURL)
+	if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
+		fmt.Fprintf(os.Stderr, "Invalid URL: %s\n", bookmarkURL)
+		os.Exit(1)
+	}
+
+	// Load config
+	configFilePath, err := storage.DefaultConfigFilePath()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error getting config path: %v\n", err)
 		os.Exit(1)
 	}
 
-	// Check if file already exists
-	if _, err := os.Stat(configPath); err == nil {
-		fmt.Fprintf(os.Stderr, "Config file already exists: %s\n", configPath)
+	config, err := storage.LoadConfig(configFilePath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Load store
+	dataPath, err := storage.DefaultConfigPath()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error getting data path: %v\n", err)
+		os.Exit(1)
+	}
+
+	jsonStorage := storage.NewJSONStorage(dataPath)
+	store, err := jsonStorage.Load()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading bookmarks: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Find or create the quick add folder
+	folderID := findOrCreateFolder(store, config.QuickAddFolder)
+
+	// Determine title and tags
+	var title string
+	var tags []string
+
+	if titleFlag != "" {
+		// Use provided title
+		title = titleFlag
+	} else {
+		// Try to use AI
+		aiClient, err := ai.NewClient()
+		if err != nil {
+			// AI unavailable - use URL as title
+			fmt.Printf("AI unavailable (%v) - using URL as title\n", err)
+			title = bookmarkURL
+		} else {
+			// Build context for AI
+			context := ai.BuildContext(store)
+			response, err := aiClient.SuggestBookmark(bookmarkURL, context)
+			if err != nil {
+				fmt.Printf("AI request failed (%v) - using URL as title\n", err)
+				title = bookmarkURL
+			} else {
+				title = response.Title
+				tags = response.Tags
+			}
+		}
+	}
+
+	// Create bookmark
+	newBookmark := model.NewBookmark(model.NewBookmarkParams{
+		Title:    title,
+		URL:      bookmarkURL,
+		FolderID: &folderID,
+		Tags:     tags,
+	})
+
+	store.AddBookmark(newBookmark)
+
+	// Save
+	if err := jsonStorage.Save(store); err != nil {
+		fmt.Fprintf(os.Stderr, "Error saving bookmarks: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Added to %s: %s\n", config.QuickAddFolder, title)
+}
+
+// findOrCreateFolder finds a folder by name or creates it at root level.
+func findOrCreateFolder(store *model.Store, name string) string {
+	// Look for existing folder at root level
+	for _, f := range store.Folders {
+		if f.Name == name && f.ParentID == nil {
+			return f.ID
+		}
+	}
+
+	// Create new folder
+	newFolder := model.NewFolder(model.NewFolderParams{
+		Name:     name,
+		ParentID: nil,
+	})
+	store.AddFolder(newFolder)
+	return newFolder.ID
+}
+
+// runInit creates the config and data files with sample data.
+func runInit() {
+	dataPath, err := storage.DefaultConfigPath()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error getting data path: %v\n", err)
+		os.Exit(1)
+	}
+
+	configPath, err := storage.DefaultConfigFilePath()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error getting config path: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Check if data file already exists
+	if _, err := os.Stat(dataPath); err == nil {
+		fmt.Fprintf(os.Stderr, "Data file already exists: %s\n", dataPath)
 		fmt.Fprintf(os.Stderr, "Use 'bm reset' to clear existing data\n")
 		os.Exit(1)
 	}
@@ -313,6 +483,7 @@ func runInit() {
 	now := time.Now()
 	devFolderID := "dev-folder"
 	toolsFolderID := "tools-folder"
+	readLaterFolderID := "read-later-folder"
 
 	store := &model.Store{
 		Folders: []model.Folder{
@@ -324,6 +495,11 @@ func runInit() {
 			{
 				ID:       toolsFolderID,
 				Name:     "Tools",
+				ParentID: nil,
+			},
+			{
+				ID:       readLaterFolderID,
+				Name:     "Read Later",
 				ParentID: nil,
 			},
 		},
@@ -363,14 +539,23 @@ func runInit() {
 		},
 	}
 
-	jsonStorage := storage.NewJSONStorage(configPath)
+	// Save data file
+	jsonStorage := storage.NewJSONStorage(dataPath)
 	if err := jsonStorage.Save(store); err != nil {
+		fmt.Fprintf(os.Stderr, "Error saving data: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Save config file
+	config := storage.DefaultConfig()
+	if err := storage.SaveConfig(configPath, &config); err != nil {
 		fmt.Fprintf(os.Stderr, "Error saving config: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("Created %s with sample data:\n", configPath)
-	fmt.Printf("  %d folders, %d bookmarks\n", len(store.Folders), len(store.Bookmarks))
+	fmt.Printf("Created:\n")
+	fmt.Printf("  %s (%d folders, %d bookmarks)\n", dataPath, len(store.Folders), len(store.Bookmarks))
+	fmt.Printf("  %s (quick add folder: %s)\n", configPath, config.QuickAddFolder)
 	fmt.Println("\nRun 'bm' to open the TUI")
 }
 

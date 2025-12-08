@@ -158,7 +158,7 @@ func (a App) renderModal() string {
 
 	// Industrial style: thick borders, teal accent
 	accent := lipgloss.AdaptiveColor{Light: "#4A7070", Dark: "#5F8787"}
-	modalWidth := layout.CalculateModalWidth(a.width, a.layoutConfig.Modal.DefaultWidth, a.layoutConfig.Modal)
+	modalWidth := layout.CalculateModalWidth(a.width, a.layoutConfig.Modal.DefaultWidthPercent, a.layoutConfig.Modal)
 	modalStyle := lipgloss.NewStyle().
 		Border(lipgloss.ThickBorder()).
 		BorderForeground(accent).
@@ -232,7 +232,12 @@ func (a App) renderModal() string {
 		}
 
 		title.WriteString(action + " " + itemType + "?\n\n")
-		content.WriteString("Are you sure you want to " + strings.ToLower(action) + " \"" + itemName + "\"?")
+		content.WriteString("\"" + itemName + "\"\n\n")
+		content.WriteString(a.styles.Help.Render("This action cannot be undone.") + "\n\n")
+		content.WriteString(a.renderHintsInline([]Hint{
+			{Key: "Enter", Desc: "confirm"},
+			{Key: "Esc", Desc: "cancel"},
+		}))
 
 	case ModeSearch:
 		// Render full-screen fuzzy finder
@@ -251,6 +256,12 @@ func (a App) renderModal() string {
 		title.WriteString("AI Quick Add\n\n")
 		content.WriteString("Analyzing link...\n\n")
 		content.WriteString(a.styles.Empty.Render("Please wait while AI suggests title, folder, and tags"))
+
+	case ModeReadLaterLoading:
+		title.WriteString("Adding to " + a.config.QuickAddFolder + "\n\n")
+		content.WriteString("URL:\n")
+		content.WriteString(a.styles.URL.Render(a.readLaterURL) + "\n\n")
+		content.WriteString(a.styles.Empty.Render("Fetching title and tags..."))
 
 	case ModeQuickAddConfirm:
 		return a.renderQuickAddConfirm()
@@ -752,23 +763,9 @@ func (a App) renderStatusToggles() string {
 	return status.String()
 }
 
-// renderHints formats a HintSet for display as "key:desc key:desc ...".
-func (a App) renderHints(hints HintSet) string {
-	allHints := hints.All()
-	if len(allHints) == 0 {
-		return ""
-	}
-
-	parts := make([]string, len(allHints))
-	for i, h := range allHints {
-		parts[i] = h.Key + ":" + h.Desc
-	}
-	return strings.Join(parts, " ")
-}
-
 // renderQuickAddConfirm renders the AI quick add confirmation modal.
 func (a App) renderQuickAddConfirm() string {
-	modalWidth := layout.CalculateModalWidth(a.width, a.layoutConfig.Modal.LargeWidth, a.layoutConfig.Modal)
+	modalWidth := layout.CalculateModalWidth(a.width, a.layoutConfig.Modal.LargeWidthPercent, a.layoutConfig.Modal)
 
 	accent := lipgloss.AdaptiveColor{Light: "#4A7070", Dark: "#5F8787"}
 	modalStyle := lipgloss.NewStyle().

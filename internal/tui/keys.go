@@ -18,6 +18,7 @@ type KeyMap struct {
 	AddBookmark   key.Binding
 	AddFolder     key.Binding
 	QuickAdd      key.Binding
+	ReadLater     key.Binding
 	Edit          key.Binding
 	EditTags      key.Binding
 	Sort          key.Binding
@@ -89,6 +90,10 @@ func DefaultKeyMap() KeyMap {
 		QuickAdd: key.NewBinding(
 			key.WithKeys("i"),
 			key.WithHelp("i", "AI quick add"),
+		),
+		ReadLater: key.NewBinding(
+			key.WithKeys("L"),
+			key.WithHelp("L", "add to read later"),
 		),
 		Edit: key.NewBinding(
 			key.WithKeys("e"),

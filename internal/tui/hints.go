@@ -1,9 +1,43 @@
 package tui
 
+import "strings"
+
 // Hint represents a single keybind hint for display.
 type Hint struct {
 	Key  string // Display key (e.g., "j/k", "Enter")
 	Desc string // Short description (e.g., "move", "open")
+}
+
+// renderHint renders a single hint as "key:desc" with styling.
+func (a App) renderHint(h Hint) string {
+	return a.styles.HintKey.Render(h.Key) + ":" + a.styles.HintDesc.Render(h.Desc)
+}
+
+// renderHints renders hints in horizontal format for bottom bar: "j/k:move h:back l:open"
+func (a App) renderHints(hints HintSet) string {
+	allHints := hints.All()
+	if len(allHints) == 0 {
+		return ""
+	}
+
+	parts := make([]string, len(allHints))
+	for i, h := range allHints {
+		parts[i] = a.renderHint(h)
+	}
+	return strings.Join(parts, " ")
+}
+
+// renderHintsInline renders hints in inline format for modals: "Enter confirm  Esc cancel"
+func (a App) renderHintsInline(hints []Hint) string {
+	if len(hints) == 0 {
+		return ""
+	}
+
+	parts := make([]string, len(hints))
+	for i, h := range hints {
+		parts[i] = a.styles.HintKey.Render(h.Key) + " " + a.styles.HintDesc.Render(h.Desc)
+	}
+	return strings.Join(parts, "  ")
 }
 
 // HintSet is an ordered collection of hints by group.
@@ -49,6 +83,8 @@ func (a App) getContextualHints() HintSet {
 		return a.getQuickAddLoadingHints()
 	case ModeQuickAddConfirm:
 		return a.getQuickAddConfirmHints()
+	case ModeReadLaterLoading:
+		return a.getReadLaterLoadingHints()
 	case ModeHelp:
 		// Help overlay covers screen, minimal hints
 		return HintSet{
@@ -161,15 +197,9 @@ func (a App) getTagsFormHints() HintSet {
 }
 
 // getConfirmDeleteHints returns hints for ModeConfirmDelete.
+// Returns empty - hints are shown inside the modal itself.
 func (a App) getConfirmDeleteHints() HintSet {
-	return HintSet{
-		Action: []Hint{
-			{Key: "Enter", Desc: "confirm"},
-		},
-		System: []Hint{
-			{Key: "Esc", Desc: "cancel"},
-		},
-	}
+	return HintSet{}
 }
 
 // getMoveHints returns hints for ModeMove.
@@ -221,6 +251,15 @@ func (a App) getQuickAddConfirmHints() HintSet {
 		},
 		System: []Hint{
 			{Key: "Esc", Desc: "cancel"},
+		},
+	}
+}
+
+// getReadLaterLoadingHints returns hints for ModeReadLaterLoading.
+func (a App) getReadLaterLoadingHints() HintSet {
+	return HintSet{
+		System: []Hint{
+			{Key: "", Desc: "adding..."},
 		},
 	}
 }

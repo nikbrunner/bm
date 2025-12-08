@@ -7,17 +7,28 @@ type FuzzyLayout struct {
 	ListHeight   int
 }
 
-// CalculateModalWidth computes responsive modal width.
-// If terminal is narrower than ResponsiveThreshold, uses responsive sizing.
-func CalculateModalWidth(terminalWidth, baseWidth int, cfg ModalConfig) int {
-	if terminalWidth < cfg.ResponsiveThreshold {
-		responsiveWidth := terminalWidth - cfg.ResponsiveMargin
-		if responsiveWidth < 1 {
-			return 1
-		}
-		return responsiveWidth
+// CalculateModalWidth computes responsive modal width based on percentage of terminal width.
+// Uses widthPercent of terminal width, clamped between MinWidth and MaxWidth.
+func CalculateModalWidth(terminalWidth, widthPercent int, cfg ModalConfig) int {
+	width := terminalWidth * widthPercent / 100
+
+	// Apply min/max constraints
+	if width < cfg.MinWidth {
+		width = cfg.MinWidth
 	}
-	return baseWidth
+	if width > cfg.MaxWidth {
+		width = cfg.MaxWidth
+	}
+
+	// Don't exceed terminal width
+	if width > terminalWidth-4 {
+		width = terminalWidth - 4
+	}
+	if width < 1 {
+		return 1
+	}
+
+	return width
 }
 
 // CalculateFuzzyLayout computes the fuzzy finder pane dimensions.

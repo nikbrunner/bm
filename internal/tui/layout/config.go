@@ -42,17 +42,17 @@ type PaneConfig struct {
 
 // ModalConfig holds modal dialog configuration.
 type ModalConfig struct {
-	// DefaultWidth is the standard modal width.
-	DefaultWidth int
+	// DefaultWidthPercent is the standard modal width as percentage of terminal width.
+	DefaultWidthPercent int
 
-	// LargeWidth is used for modals needing more space (quick add confirm).
-	LargeWidth int
+	// LargeWidthPercent is used for modals needing more space (quick add confirm).
+	LargeWidthPercent int
 
-	// ResponsiveThreshold: below this terminal width, use responsive sizing.
-	ResponsiveThreshold int
+	// MinWidth is the minimum modal width in characters.
+	MinWidth int
 
-	// ResponsiveMargin: margin from terminal edge when responsive.
-	ResponsiveMargin int
+	// MaxWidth is the maximum modal width in characters.
+	MaxWidth int
 
 	// MoveMaxVisible: max items shown in move folder picker.
 	MoveMaxVisible int
@@ -114,10 +114,10 @@ func DefaultConfig() LayoutConfig {
 			PinnedHeaderReduction: 4,
 		},
 		Modal: ModalConfig{
-			DefaultWidth:           50,
-			LargeWidth:             60,
-			ResponsiveThreshold:    70,
-			ResponsiveMargin:       10,
+			DefaultWidthPercent:    40,
+			LargeWidthPercent:      50,
+			MinWidth:               50,
+			MaxWidth:               80,
 			MoveMaxVisible:         8,
 			QuickAddFoldersVisible: 5,
 			HelpLeftColumnWidth:    18,

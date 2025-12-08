@@ -17,6 +17,8 @@ type Styles struct {
 	Date         lipgloss.Style
 	Help         lipgloss.Style
 	Empty        lipgloss.Style
+	HintKey      lipgloss.Style // Key portion of hints (e.g., "Enter", "j/k")
+	HintDesc     lipgloss.Style // Description portion of hints (e.g., "confirm", "move")
 }
 
 // DefaultStyles returns the default style configuration.
@@ -77,6 +79,12 @@ func DefaultStyles() Styles {
 			Padding(1, 0),
 
 		Empty: lipgloss.NewStyle().
+			Foreground(subtle),
+
+		HintKey: lipgloss.NewStyle().
+			Foreground(subtle),
+
+		HintDesc: lipgloss.NewStyle().
 			Foreground(subtle),
 	}
 }
