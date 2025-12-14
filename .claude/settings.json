@@ -10,8 +10,6 @@
       "Bash(go fmt:*)",
       "Bash(gofmt:*)",
       "Bash(mkdir:*)",
-      "Skill(superpowers:test-driven-development)",
-      "Skill(superpowers:brainstorming)",
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(./bm import:*)",
       "Bash(./bm git)",
