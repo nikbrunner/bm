@@ -181,3 +181,37 @@ func TestTruncateANSIAware_EdgeCases(t *testing.T) {
 		})
 	}
 }
+
+func TestTruncatePathFromLeft(t *testing.T) {
+	cfg := DefaultConfig().Text
+
+	tests := []struct {
+		name     string
+		path     string
+		maxWidth int
+		want     string
+	}{
+		{"short path", "/Dev", 20, "/Dev"},
+		{"exact width", "/Dev/React", 10, "/Dev/React"},
+		{"needs truncation", "/Dev/React/Components/Forms", 20, ".../Components/Forms"},
+		{"long path narrow", "/Dev/React/Components", 15, "...t/Components"},
+		{"very short max", "/Dev/React", 5, "...ct"},
+		{"zero width", "/Dev", 0, ""},
+		{"negative width", "/Dev", -1, ""},
+		{"ellipsis only", "/Dev/React", 3, "..."},
+		{"max is 2", "/Dev/React", 2, ".."},
+		{"max is 1", "/Dev/React", 1, "."},
+		{"empty path", "", 10, ""},
+		{"single slash", "/", 10, "/"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := TruncatePathFromLeft(tt.path, tt.maxWidth, cfg)
+			if got != tt.want {
+				t.Errorf("TruncatePathFromLeft(%q, %d) = %q, want %q",
+					tt.path, tt.maxWidth, got, tt.want)
+			}
+		})
+	}
+}

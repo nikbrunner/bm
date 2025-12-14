@@ -140,3 +140,30 @@ func TruncateANSIAware(styledText string, maxWidth int, cfg TextConfig) string {
 
 	return string(result)
 }
+
+// TruncatePathFromLeft truncates a path string from the left side,
+// preserving the rightmost (most relevant) segments.
+// Example: TruncatePathFromLeft("/Dev/React/Components/Forms", 25, cfg) -> ".../Components/Forms"
+func TruncatePathFromLeft(path string, maxWidth int, cfg TextConfig) string {
+	if maxWidth <= 0 {
+		return ""
+	}
+
+	pathLen := utf8.RuneCountInString(path)
+	if pathLen <= maxWidth {
+		return path
+	}
+
+	ellipsisLen := utf8.RuneCountInString(cfg.Ellipsis)
+	if maxWidth <= ellipsisLen {
+		runes := []rune(cfg.Ellipsis)
+		return string(runes[:maxWidth])
+	}
+
+	// Calculate how many characters we can show after ellipsis
+	availableLen := maxWidth - ellipsisLen
+	runes := []rune(path)
+
+	// Take from the right side
+	return cfg.Ellipsis + string(runes[pathLen-availableLen:])
+}

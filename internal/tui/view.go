@@ -65,15 +65,39 @@ func (a App) renderView() string {
 		)
 	}
 
+	// Add breadcrumb above columns
+	breadcrumb := a.renderBreadcrumb()
+
 	// Add help bar at bottom
 	helpBar := a.renderHelpBar()
 
 	content := a.styles.App.Render(
-		lipgloss.JoinVertical(lipgloss.Left, columns, helpBar),
+		lipgloss.JoinVertical(lipgloss.Left, breadcrumb, columns, helpBar),
 	)
 
 	// Use Place to ensure exact terminal dimensions and prevent overflow
 	return lipgloss.Place(a.width, a.height, lipgloss.Left, lipgloss.Top, content)
+}
+
+// renderBreadcrumb renders the folder path breadcrumb above the Miller columns.
+func (a App) renderBreadcrumb() string {
+	var path string
+
+	if a.browser.CurrentFolderID == nil {
+		// At root - show app name
+		path = "bm"
+	} else {
+		// In a subfolder - show full path
+		path = a.store.GetFolderPath(a.browser.CurrentFolderID)
+	}
+
+	// Calculate available width (terminal width minus app padding: left=2, right=2)
+	availableWidth := a.width - 4
+
+	// Truncate from left if path is too long
+	path = layout.TruncatePathFromLeft(path, availableWidth, a.layoutConfig.Text)
+
+	return a.styles.Breadcrumb.Render(path)
 }
 
 // renderPinnedPane renders the leftmost pane with pinned items.

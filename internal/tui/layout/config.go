@@ -12,7 +12,7 @@ type LayoutConfig struct {
 // PaneConfig holds pane dimension configuration.
 type PaneConfig struct {
 	// HeightReduction is subtracted from terminal height for pane content.
-	// Accounts for: app padding (2) + help bar (2) + pane borders (2) = 6
+	// Accounts for: app padding (2) + breadcrumb (1) + help bar (2) + pane borders (2) = 7
 	HeightReduction int
 
 	// MinHeight is the minimum pane height.
@@ -104,7 +104,7 @@ type FuzzyConfig struct {
 func DefaultConfig() LayoutConfig {
 	return LayoutConfig{
 		Pane: PaneConfig{
-			HeightReduction:       6,
+			HeightReduction:       7,
 			MinHeight:             5,
 			ThreePaneWidthOffset:  8,
 			FourPaneWidthOffset:   10,

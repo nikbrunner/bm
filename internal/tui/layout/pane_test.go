@@ -10,10 +10,10 @@ func TestCalculatePaneHeight(t *testing.T) {
 		terminalHeight int
 		want           int
 	}{
-		{"normal terminal", 24, 18},               // 24 - 6 = 18
-		{"large terminal", 50, 44},                // 50 - 6 = 44
-		{"small terminal enforces min", 8, 5},     // 8 - 6 = 2, min is 5
-		{"exactly at reduction", 6, 5},            // 6 - 6 = 0, min is 5
+		{"normal terminal", 24, 17},               // 24 - 7 = 17
+		{"large terminal", 50, 43},                // 50 - 7 = 43
+		{"small terminal enforces min", 8, 5},     // 8 - 7 = 1, min is 5
+		{"exactly at reduction", 7, 5},            // 7 - 7 = 0, min is 5
 		{"terminal smaller than reduction", 4, 5}, // negative clamps to min
 	}
 
