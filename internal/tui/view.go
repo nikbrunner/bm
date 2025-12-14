@@ -712,9 +712,11 @@ func (a App) renderHelpBar() string {
 
 	var lines []string
 
-	// Line 1: Message (if any)
+	// Line 1: Empty spacer OR message (message replaces the gap)
 	if a.messageText != "" {
 		lines = append(lines, a.renderMessageLine())
+	} else {
+		lines = append(lines, "") // Empty line provides gap when no message
 	}
 
 	// Line 2: Toggle states (only in normal/filter modes)
@@ -728,9 +730,7 @@ func (a App) renderHelpBar() string {
 		lines = append(lines, lineStyle.Render(hintsStr))
 	}
 
-	// Only pad top, not bottom
-	wrapperStyle := lipgloss.NewStyle().PaddingTop(1)
-	return wrapperStyle.Render(strings.Join(lines, "\n"))
+	return strings.Join(lines, "\n")
 }
 
 // renderMessageLine renders the styled message with prefix icon based on type.
