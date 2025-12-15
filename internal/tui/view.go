@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -242,26 +243,37 @@ func (a App) renderModal() string {
 			action = "Cut"
 		}
 
-		// Try folder first, then bookmark
-		var itemType, itemName string
-		if folder := a.store.GetFolderByID(a.modal.EditItemID); folder != nil {
-			itemType = "Folder"
-			itemName = folder.Name
-		} else if bookmark := a.store.GetBookmarkByID(a.modal.EditItemID); bookmark != nil {
-			itemType = "Bookmark"
-			itemName = bookmark.Title
+		// Check for batch operation
+		if len(a.modal.DeleteItems) > 0 {
+			count := len(a.modal.DeleteItems)
+			title.WriteString(action + " " + strconv.Itoa(count) + " items?\n\n")
+			content.WriteString(a.styles.Help.Render("This action cannot be undone.") + "\n\n")
+			content.WriteString(a.renderHintsInline([]Hint{
+				{Key: "Enter", Desc: "confirm"},
+				{Key: "Esc", Desc: "cancel"},
+			}))
 		} else {
-			itemType = "Item"
-			itemName = "this item"
-		}
+			// Single item - try folder first, then bookmark
+			var itemType, itemName string
+			if folder := a.store.GetFolderByID(a.modal.EditItemID); folder != nil {
+				itemType = "Folder"
+				itemName = folder.Name
+			} else if bookmark := a.store.GetBookmarkByID(a.modal.EditItemID); bookmark != nil {
+				itemType = "Bookmark"
+				itemName = bookmark.Title
+			} else {
+				itemType = "Item"
+				itemName = "this item"
+			}
 
-		title.WriteString(action + " " + itemType + "?\n\n")
-		content.WriteString("\"" + itemName + "\"\n\n")
-		content.WriteString(a.styles.Help.Render("This action cannot be undone.") + "\n\n")
-		content.WriteString(a.renderHintsInline([]Hint{
-			{Key: "Enter", Desc: "confirm"},
-			{Key: "Esc", Desc: "cancel"},
-		}))
+			title.WriteString(action + " " + itemType + "?\n\n")
+			content.WriteString("\"" + itemName + "\"\n\n")
+			content.WriteString(a.styles.Help.Render("This action cannot be undone.") + "\n\n")
+			content.WriteString(a.renderHintsInline([]Hint{
+				{Key: "Enter", Desc: "confirm"},
+				{Key: "Esc", Desc: "cancel"},
+			}))
+		}
 
 	case ModeSearch:
 		// Render full-screen fuzzy finder
@@ -530,9 +542,10 @@ func (a App) renderPreviewPane(width, height int) string {
 		Render(strings.TrimRight(content.String(), "\n"))
 }
 
-func (a App) renderItem(item Item, selected bool, maxWidth int) string {
+func (a App) renderItem(item Item, isCursor bool, maxWidth int) string {
 	var prefix, text, suffix string
 	var isPinned bool
+	isMarked := a.selection.IsSelected(item.ID())
 
 	if item.IsFolder() {
 		isPinned = item.Folder.Pinned
@@ -549,15 +562,27 @@ func (a App) renderItem(item Item, selected bool, maxWidth int) string {
 		text = item.Title()
 	}
 
+	// Add selection marker for marked items (not cursor)
+	if isMarked && !isCursor {
+		prefix = "▸ " + prefix
+	}
+
 	// Truncate if too long using layout function
 	line, _ := layout.TruncateWithPrefixSuffix(text, maxWidth, prefix, suffix, a.layoutConfig.Text)
 
-	if selected {
-		// Pad to fill width for selection highlight
+	// Determine which style to use based on cursor and selection state
+	needsHighlight := isCursor || isMarked
+	if needsHighlight {
+		// Pad to fill width for highlight
 		for len(line) < maxWidth {
 			line += " "
 		}
-		return a.styles.ItemSelected.Render(line)
+		if isCursor && isMarked {
+			return a.styles.ItemMarkedCursor.Render(line)
+		} else if isCursor {
+			return a.styles.ItemSelected.Render(line)
+		}
+		return a.styles.ItemMarked.Render(line)
 	}
 	return a.styles.Item.Render(line)
 }
@@ -950,7 +975,7 @@ func (a App) renderHelpOverlay() string {
 	left.WriteString("o    sort\n")
 	left.WriteString("m    move\n")
 
-	// Right column: Edit
+	// Right column: Edit + Selection
 	var right strings.Builder
 	right.WriteString(a.styles.Title.Render("edit") + "\n")
 	right.WriteString("a    add bookmark\n")
@@ -963,6 +988,11 @@ func (a App) renderHelpOverlay() string {
 	right.WriteString("x    cut\n")
 	right.WriteString("p/P  paste\n")
 	right.WriteString("c    confirm toggle\n")
+	right.WriteString("\n")
+	right.WriteString(a.styles.Title.Render("select") + "\n")
+	right.WriteString("v    select item\n")
+	right.WriteString("V    visual mode\n")
+	right.WriteString("Esc  clear select\n")
 	right.WriteString("\n")
 	right.WriteString(a.styles.Help.Render("[?/q/esc] close"))
 

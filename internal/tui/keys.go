@@ -28,6 +28,9 @@ type KeyMap struct {
 	YankURL       key.Binding
 	Pin           key.Binding
 	Move          key.Binding
+	Select        key.Binding
+	SelectVisual  key.Binding
+	ClearSelect   key.Binding
 	Help          key.Binding
 	Quit          key.Binding
 }
@@ -130,6 +133,18 @@ func DefaultKeyMap() KeyMap {
 		Move: key.NewBinding(
 			key.WithKeys("m"),
 			key.WithHelp("m", "move to folder"),
+		),
+		Select: key.NewBinding(
+			key.WithKeys("v"),
+			key.WithHelp("v", "select"),
+		),
+		SelectVisual: key.NewBinding(
+			key.WithKeys("V"),
+			key.WithHelp("V", "visual"),
+		),
+		ClearSelect: key.NewBinding(
+			key.WithKeys("esc"),
+			key.WithHelp("Esc", "clear select"),
 		),
 		Help: key.NewBinding(
 			key.WithKeys("?"),

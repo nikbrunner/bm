@@ -1,6 +1,9 @@
 package tui
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+)
 
 // Hint represents a single keybind hint for display.
 type Hint struct {
@@ -99,7 +102,7 @@ func (a App) getContextualHints() HintSet {
 
 // getNormalModeHints returns hints for ModeNormal (main browse).
 func (a App) getNormalModeHints() HintSet {
-	return HintSet{
+	hints := HintSet{
 		Nav: []Hint{
 			{Key: "j/k", Desc: "move"},
 			{Key: "h", Desc: "back"},
@@ -119,6 +122,18 @@ func (a App) getNormalModeHints() HintSet {
 			{Key: "q", Desc: "quit"},
 		},
 	}
+
+	// Show selection hints when items are selected
+	if a.selection.HasSelection() {
+		count := a.selection.Count()
+		hints.Edit = []Hint{
+			{Key: "v", Desc: "±sel"},
+			{Key: "Esc", Desc: "clear"},
+			{Key: "d", Desc: "del " + strconv.Itoa(count)},
+		}
+	}
+
+	return hints
 }
 
 // getFilterModeHints returns hints for ModeFilter (local filter active).

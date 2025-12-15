@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -131,8 +132,8 @@ type App struct {
 	// For gg command
 	lastKeyWasG bool
 
-	// Yank buffer
-	yankedItem *Item
+	// Yank buffer (supports batch yank)
+	yankedItems []Item
 
 	// UI mode and modal state
 	mode  Mode
@@ -147,6 +148,9 @@ type App struct {
 
 	// Move state
 	move MoveState
+
+	// Selection state (visual mode)
+	selection SelectionState
 
 	// Settings
 	confirmDelete bool // true = ask confirmation before delete (default true)
@@ -205,6 +209,7 @@ func NewApp(params AppParams) App {
 		search:        NewSearchState(layoutCfg),
 		quickAdd:      NewQuickAddState(layoutCfg),
 		move:          NewMoveState(layoutCfg),
+		selection:     NewSelectionState(),
 		confirmDelete: true,
 		width:         80,
 		height:        24,
@@ -227,6 +232,8 @@ func (a *App) refreshItems() {
 	// Clear filter when refreshing (folder changed)
 	a.search.FilterQuery = ""
 	a.search.FilteredItems = nil
+	// Clear selection when folder changes
+	a.selection.Reset()
 
 	// Get folders and bookmarks
 	folders := a.store.GetFoldersInFolder(a.browser.CurrentFolderID)
@@ -461,9 +468,22 @@ func (a App) Items() []Item {
 	return a.browser.Items
 }
 
-// YankedItem returns the item in the yank buffer, or nil if empty.
+// YankedItem returns the first item in the yank buffer, or nil if empty.
 func (a App) YankedItem() *Item {
-	return a.yankedItem
+	if len(a.yankedItems) == 0 {
+		return nil
+	}
+	return &a.yankedItems[0]
+}
+
+// YankedItems returns all items in the yank buffer.
+func (a App) YankedItems() []Item {
+	return a.yankedItems
+}
+
+// HasYankedItems returns true if there are items in the yank buffer.
+func (a App) HasYankedItems() bool {
+	return len(a.yankedItems) > 0
 }
 
 // Mode returns the current UI mode.
@@ -720,6 +740,19 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(displayItems) == 0 || a.browser.Cursor >= len(displayItems) {
 				return a, nil
 			}
+
+			// Capture items to move (selected or current)
+			a.move.ItemsToMove = nil
+			if a.selection.HasSelection() {
+				for _, item := range displayItems {
+					if a.selection.IsSelected(item.ID()) {
+						a.move.ItemsToMove = append(a.move.ItemsToMove, item)
+					}
+				}
+			} else {
+				a.move.ItemsToMove = []Item{displayItems[a.browser.Cursor]}
+			}
+
 			a.mode = ModeMove
 			a.move.Folders = a.buildFolderPaths()
 			a.move.FilteredFolders = a.move.Folders // Start with all folders
@@ -737,6 +770,29 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, a.move.FilterInput.Focus()
 		}
 
+		// Handle v - toggle selection on current item
+		if key.Matches(msg, a.keys.Select) {
+			a.lastKeyWasG = false
+			a.toggleSelectCurrentItem()
+			return a, nil
+		}
+
+		// Handle V - enter visual line mode
+		if key.Matches(msg, a.keys.SelectVisual) {
+			a.lastKeyWasG = false
+			a.enterVisualMode()
+			return a, nil
+		}
+
+		// Handle Esc - clear selection if any
+		if key.Matches(msg, a.keys.ClearSelect) {
+			if a.selection.HasSelection() {
+				a.lastKeyWasG = false
+				a.clearSelection()
+				return a, nil
+			}
+		}
+
 		// Reset sequence flags for any other key
 		a.lastKeyWasG = false
 
@@ -748,12 +804,14 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			displayItems := a.getDisplayItems()
 			if len(displayItems) > 0 && a.browser.Cursor < len(displayItems)-1 {
 				a.browser.Cursor++
+				a.updateVisualSelection()
 			}
 			a.clearMessage() // Clear message on navigation
 
 		case key.Matches(msg, a.keys.Up):
 			if a.browser.Cursor > 0 {
 				a.browser.Cursor--
+				a.updateVisualSelection()
 			}
 			a.clearMessage() // Clear message on navigation
 
@@ -761,6 +819,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			displayItems := a.getDisplayItems()
 			if len(displayItems) > 0 {
 				a.browser.Cursor = len(displayItems) - 1
+				a.updateVisualSelection()
 			}
 
 		case key.Matches(msg, a.keys.Right):
@@ -1102,7 +1161,7 @@ func (a *App) unpinSelectedItem() tea.Cmd {
 	return cmd
 }
 
-// togglePinCurrentItem toggles pin on the currently selected item in browser pane.
+// togglePinCurrentItem toggles pin on the currently selected item (or selected items) in browser pane.
 // Returns a command to schedule message auto-clear.
 func (a *App) togglePinCurrentItem() tea.Cmd {
 	displayItems := a.getDisplayItems()
@@ -1111,6 +1170,51 @@ func (a *App) togglePinCurrentItem() tea.Cmd {
 	}
 
 	var cmd tea.Cmd
+
+	// Handle batch pin toggle
+	if a.selection.HasSelection() {
+		var pinCount, unpinCount int
+		for _, item := range displayItems {
+			if !a.selection.IsSelected(item.ID()) {
+				continue
+			}
+			if item.IsFolder() {
+				wasPinned := item.Folder.Pinned
+				if err := a.store.TogglePinFolder(item.Folder.ID); err == nil {
+					if wasPinned {
+						unpinCount++
+					} else {
+						pinCount++
+					}
+				}
+			} else {
+				wasPinned := item.Bookmark.Pinned
+				if err := a.store.TogglePinBookmark(item.Bookmark.ID); err == nil {
+					if wasPinned {
+						unpinCount++
+					} else {
+						pinCount++
+					}
+				}
+			}
+		}
+
+		a.clearSelection()
+		a.refreshItems()
+		a.refreshPinnedItems()
+
+		// Build message
+		if pinCount > 0 && unpinCount > 0 {
+			cmd = a.setMessage(MessageSuccess, "Pinned "+strconv.Itoa(pinCount)+", unpinned "+strconv.Itoa(unpinCount)+" items")
+		} else if pinCount > 0 {
+			cmd = a.setMessage(MessageSuccess, "Pinned "+strconv.Itoa(pinCount)+" items")
+		} else {
+			cmd = a.setMessage(MessageSuccess, "Unpinned "+strconv.Itoa(unpinCount)+" items")
+		}
+		return cmd
+	}
+
+	// Single item toggle
 	item := displayItems[a.browser.Cursor]
 	if item.IsFolder() {
 		wasPinned := item.Folder.Pinned
@@ -1780,27 +1884,120 @@ func (a App) submitQuickAdd() (tea.Model, tea.Cmd) {
 	return a, nil
 }
 
-// yankCurrentItem copies the current item to the yank buffer.
-func (a *App) yankCurrentItem() {
+// toggleSelectCurrentItem toggles selection on the current item.
+func (a *App) toggleSelectCurrentItem() {
 	displayItems := a.getDisplayItems()
 	if len(displayItems) == 0 || a.browser.Cursor >= len(displayItems) {
 		return
 	}
 	item := displayItems[a.browser.Cursor]
-	a.yankedItem = &item
+	a.selection.Toggle(item.ID())
+
+	// Exit visual mode when toggling with v
+	if a.selection.VisualMode {
+		a.selection.VisualMode = false
+		a.selection.AnchorIndex = -1
+	}
+}
+
+// enterVisualMode starts visual line mode at current cursor.
+func (a *App) enterVisualMode() {
+	displayItems := a.getDisplayItems()
+	if len(displayItems) == 0 || a.browser.Cursor >= len(displayItems) {
+		return
+	}
+
+	a.selection.VisualMode = true
+	a.selection.AnchorIndex = a.browser.Cursor
+
+	// Select the current item
+	item := displayItems[a.browser.Cursor]
+	a.selection.Selected[item.ID()] = true
+}
+
+// updateVisualSelection updates selection when cursor moves in visual mode.
+func (a *App) updateVisualSelection() {
+	if !a.selection.VisualMode {
+		return
+	}
+
+	displayItems := a.getDisplayItems()
+	if len(displayItems) == 0 {
+		return
+	}
+
+	// Clear existing selection and re-select range
+	a.selection.Selected = make(map[string]bool)
+
+	start := a.selection.AnchorIndex
+	end := a.browser.Cursor
+	if start > end {
+		start, end = end, start
+	}
+
+	for i := start; i <= end && i < len(displayItems); i++ {
+		item := displayItems[i]
+		a.selection.Selected[item.ID()] = true
+	}
+}
+
+// clearSelection clears all selection state.
+func (a *App) clearSelection() {
+	a.selection.Reset()
+}
+
+// yankCurrentItem copies the current item (or selected items) to the yank buffer.
+func (a *App) yankCurrentItem() {
+	displayItems := a.getDisplayItems()
+	if len(displayItems) == 0 || a.browser.Cursor >= len(displayItems) {
+		return
+	}
+
+	// If selection exists, yank all selected items
+	if a.selection.HasSelection() {
+		a.yankedItems = nil
+		for _, item := range displayItems {
+			if a.selection.IsSelected(item.ID()) {
+				a.yankedItems = append(a.yankedItems, item)
+			}
+		}
+		a.setStatus("Yanked " + strconv.Itoa(len(a.yankedItems)) + " items")
+		a.clearSelection()
+		return
+	}
+
+	// Single item yank
+	item := displayItems[a.browser.Cursor]
+	a.yankedItems = []Item{item}
 	a.setStatus("Yanked: " + item.Title())
 }
 
-// cutCurrentItem copies the current item to yank buffer and deletes it.
-// Shows confirmation dialog if confirmDelete is enabled.
+// cutCurrentItem copies the current item (or selected items) to yank buffer and deletes it.
+// Shows confirmation dialog if confirmDelete is enabled or if batch cutting.
 func (a *App) cutCurrentItem() {
 	displayItems := a.getDisplayItems()
 	if len(displayItems) == 0 || a.browser.Cursor >= len(displayItems) {
 		return
 	}
 
-	item := displayItems[a.browser.Cursor]
 	a.modal.CutMode = true
+
+	// If selection exists, batch cut
+	if a.selection.HasSelection() {
+		var itemsToCut []Item
+		for _, item := range displayItems {
+			if a.selection.IsSelected(item.ID()) {
+				itemsToCut = append(itemsToCut, item)
+			}
+		}
+		// Always confirm batch operations
+		a.modal.DeleteItems = itemsToCut
+		a.mode = ModeConfirmDelete
+		return
+	}
+
+	// Single item cut
+	item := displayItems[a.browser.Cursor]
 
 	// Show confirmation if enabled
 	if a.confirmDelete {
@@ -1814,12 +2011,11 @@ func (a *App) cutCurrentItem() {
 	}
 
 	// No confirmation - cut immediately
+	a.yankedItems = []Item{item}
 	if item.IsFolder() {
-		a.yankedItem = &item
 		a.store.RemoveFolderByID(item.Folder.ID)
 		a.setStatus("Cut: " + item.Folder.Name)
 	} else {
-		a.yankedItem = &item
 		a.store.RemoveBookmarkByID(item.Bookmark.ID)
 		a.setStatus("Cut: " + item.Bookmark.Title)
 	}
@@ -1830,16 +2026,32 @@ func (a *App) cutCurrentItem() {
 	}
 }
 
-// deleteCurrentItem deletes the current item without copying to yank buffer.
-// Shows confirmation dialog if confirmDelete is enabled.
+// deleteCurrentItem deletes the current item (or selected items) without copying to yank buffer.
+// Shows confirmation dialog if confirmDelete is enabled or if batch deleting.
 func (a *App) deleteCurrentItem() {
 	displayItems := a.getDisplayItems()
 	if len(displayItems) == 0 || a.browser.Cursor >= len(displayItems) {
 		return
 	}
 
-	item := displayItems[a.browser.Cursor]
 	a.modal.CutMode = false
+
+	// If selection exists, batch delete
+	if a.selection.HasSelection() {
+		var itemsToDelete []Item
+		for _, item := range displayItems {
+			if a.selection.IsSelected(item.ID()) {
+				itemsToDelete = append(itemsToDelete, item)
+			}
+		}
+		// Always confirm batch operations
+		a.modal.DeleteItems = itemsToDelete
+		a.mode = ModeConfirmDelete
+		return
+	}
+
+	// Single item delete
+	item := displayItems[a.browser.Cursor]
 
 	// Show confirmation if enabled
 	if a.confirmDelete {
@@ -1868,8 +2080,44 @@ func (a *App) deleteCurrentItem() {
 }
 
 // confirmDeleteItem performs the actual deletion after confirmation.
-// Handles both folders and bookmarks.
+// Handles both single items and batch operations.
 func (a *App) confirmDeleteItem() {
+	// Handle batch delete/cut
+	if len(a.modal.DeleteItems) > 0 {
+		if a.modal.CutMode {
+			a.yankedItems = make([]Item, len(a.modal.DeleteItems))
+			copy(a.yankedItems, a.modal.DeleteItems)
+		}
+
+		for _, item := range a.modal.DeleteItems {
+			if item.IsFolder() {
+				a.store.RemoveFolderByID(item.Folder.ID)
+			} else {
+				a.store.RemoveBookmarkByID(item.Bookmark.ID)
+			}
+		}
+
+		count := len(a.modal.DeleteItems)
+		a.modal.DeleteItems = nil
+		a.clearSelection()
+
+		a.refreshItems()
+		if a.browser.Cursor >= len(a.browser.Items) && a.browser.Cursor > 0 {
+			a.browser.Cursor = len(a.browser.Items) - 1
+		}
+		if a.browser.Cursor < 0 {
+			a.browser.Cursor = 0
+		}
+
+		if a.modal.CutMode {
+			a.setStatus("Cut " + strconv.Itoa(count) + " items")
+		} else {
+			a.setStatus("Deleted " + strconv.Itoa(count) + " items")
+		}
+		return
+	}
+
+	// Single item delete/cut
 	var title string
 
 	// Try as folder first
@@ -1880,7 +2128,7 @@ func (a *App) confirmDeleteItem() {
 			// Make a copy before deleting
 			folderCopy := *folder
 			item := Item{Kind: ItemFolder, Folder: &folderCopy}
-			a.yankedItem = &item
+			a.yankedItems = []Item{item}
 		}
 		a.store.RemoveFolderByID(a.modal.EditItemID)
 	} else {
@@ -1894,7 +2142,7 @@ func (a *App) confirmDeleteItem() {
 			// Make a copy before deleting
 			bookmarkCopy := *bookmark
 			item := Item{Kind: ItemBookmark, Bookmark: &bookmarkCopy}
-			a.yankedItem = &item
+			a.yankedItems = []Item{item}
 		}
 		a.store.RemoveBookmarkByID(a.modal.EditItemID)
 	}
@@ -1912,18 +2160,16 @@ func (a *App) confirmDeleteItem() {
 	}
 }
 
-// executeMoveItem moves the current item to the selected folder.
+// executeMoveItem moves the item(s) to the selected folder.
 func (a *App) executeMoveItem() {
 	if a.move.FolderIdx < 0 || a.move.FolderIdx >= len(a.move.FilteredFolders) {
 		return
 	}
 
-	displayItems := a.getDisplayItems()
-	if len(displayItems) == 0 || a.browser.Cursor >= len(displayItems) {
+	if len(a.move.ItemsToMove) == 0 {
 		return
 	}
 
-	item := displayItems[a.browser.Cursor]
 	targetPath := a.move.FilteredFolders[a.move.FolderIdx]
 
 	// Resolve target folder ID (nil for root "/")
@@ -1935,36 +2181,49 @@ func (a *App) executeMoveItem() {
 		}
 	}
 
-	if item.IsFolder() {
-		folder := a.store.GetFolderByID(item.Folder.ID)
-		if folder == nil {
-			return
-		}
+	movedCount := 0
+	for _, item := range a.move.ItemsToMove {
+		if item.IsFolder() {
+			folder := a.store.GetFolderByID(item.Folder.ID)
+			if folder == nil {
+				continue
+			}
 
-		// Prevent moving folder into itself or its descendants
-		if targetFolderID != nil && a.isFolderDescendant(item.Folder.ID, *targetFolderID) {
-			a.setStatus("Cannot move folder into itself")
-			return
-		}
+			// Prevent moving folder into itself or its descendants
+			if targetFolderID != nil && a.isFolderDescendant(item.Folder.ID, *targetFolderID) {
+				continue // Skip this one, don't abort the whole operation
+			}
 
-		folder.ParentID = targetFolderID
-		a.setStatus("Moved: " + folder.Name + " → " + targetPath)
-	} else {
-		bookmark := a.store.GetBookmarkByID(item.Bookmark.ID)
-		if bookmark == nil {
-			return
-		}
+			folder.ParentID = targetFolderID
+			movedCount++
+		} else {
+			bookmark := a.store.GetBookmarkByID(item.Bookmark.ID)
+			if bookmark == nil {
+				continue
+			}
 
-		bookmark.FolderID = targetFolderID
-		a.setStatus("Moved: " + bookmark.Title + " → " + targetPath)
+			bookmark.FolderID = targetFolderID
+			movedCount++
+		}
 	}
 
+	a.clearSelection()
+	a.move.ItemsToMove = nil
 	a.refreshItems()
 	a.refreshPinnedItems()
 
 	// Adjust cursor if needed
 	if a.browser.Cursor >= len(a.browser.Items) && a.browser.Cursor > 0 {
-		a.browser.Cursor--
+		a.browser.Cursor = len(a.browser.Items) - 1
+	}
+	if a.browser.Cursor < 0 {
+		a.browser.Cursor = 0
+	}
+
+	if movedCount == 1 {
+		a.setStatus("Moved item → " + targetPath)
+	} else {
+		a.setStatus("Moved " + strconv.Itoa(movedCount) + " items → " + targetPath)
 	}
 }
 
@@ -1986,9 +2245,9 @@ func (a *App) isFolderDescendant(folderID, targetID string) bool {
 	return false
 }
 
-// pasteItem pastes the yanked item before or after the cursor.
+// pasteItem pastes the yanked item(s) before or after the cursor.
 func (a *App) pasteItem(before bool) {
-	if a.yankedItem == nil {
+	if len(a.yankedItems) == 0 {
 		a.setStatus("Nothing to paste")
 		return
 	}
@@ -1999,57 +2258,59 @@ func (a *App) pasteItem(before bool) {
 		insertIdx = a.browser.Cursor + 1
 	}
 
-	title := a.yankedItem.Title()
-
-	if a.yankedItem.IsFolder() {
-		// Create a copy with new ID
-		newFolder := model.NewFolder(model.NewFolderParams{
-			Name:     a.yankedItem.Folder.Name,
-			ParentID: a.browser.CurrentFolderID,
-		})
-
-		// Count folders in current view to find insert position
-		folderCount := 0
-		for _, item := range a.browser.Items {
-			if item.IsFolder() {
-				folderCount++
-			}
+	// Count folders in current view
+	folderCount := 0
+	for _, item := range a.browser.Items {
+		if item.IsFolder() {
+			folderCount++
 		}
+	}
 
-		// If pasting among folders
-		if insertIdx <= folderCount {
-			a.store.InsertFolderAt(newFolder, insertIdx)
+	// Paste all yanked items
+	pastedCount := 0
+	for _, yankedItem := range a.yankedItems {
+		if yankedItem.IsFolder() {
+			// Create a copy with new ID
+			newFolder := model.NewFolder(model.NewFolderParams{
+				Name:     yankedItem.Folder.Name,
+				ParentID: a.browser.CurrentFolderID,
+			})
+
+			// If pasting among folders
+			if insertIdx <= folderCount {
+				a.store.InsertFolderAt(newFolder, insertIdx)
+				insertIdx++ // next item goes after this one
+				folderCount++
+			} else {
+				a.store.AddFolder(newFolder)
+			}
 		} else {
-			a.store.AddFolder(newFolder)
-		}
-	} else {
-		// Create a copy with new ID
-		newBookmark := model.NewBookmark(model.NewBookmarkParams{
-			Title:    a.yankedItem.Bookmark.Title,
-			URL:      a.yankedItem.Bookmark.URL,
-			FolderID: a.browser.CurrentFolderID,
-			Tags:     a.yankedItem.Bookmark.Tags,
-		})
+			// Create a copy with new ID
+			newBookmark := model.NewBookmark(model.NewBookmarkParams{
+				Title:    yankedItem.Bookmark.Title,
+				URL:      yankedItem.Bookmark.URL,
+				FolderID: a.browser.CurrentFolderID,
+				Tags:     yankedItem.Bookmark.Tags,
+			})
 
-		// Count folders to calculate bookmark insert position
-		folderCount := 0
-		for _, item := range a.browser.Items {
-			if item.IsFolder() {
-				folderCount++
+			// Bookmarks come after folders in the view
+			bookmarkIdx := insertIdx - folderCount
+			if bookmarkIdx < 0 {
+				bookmarkIdx = 0
 			}
-		}
 
-		// Bookmarks come after folders in the view
-		bookmarkIdx := insertIdx - folderCount
-		if bookmarkIdx < 0 {
-			bookmarkIdx = 0
+			a.store.InsertBookmarkAt(newBookmark, bookmarkIdx)
+			insertIdx++ // next item goes after this one
 		}
-
-		a.store.InsertBookmarkAt(newBookmark, bookmarkIdx)
+		pastedCount++
 	}
 
 	a.refreshItems()
-	a.setStatus("Pasted: " + title)
+	if pastedCount == 1 {
+		a.setStatus("Pasted: " + a.yankedItems[0].Title())
+	} else {
+		a.setStatus("Pasted " + strconv.Itoa(pastedCount) + " items")
+	}
 }
 
 // openURLCmd returns a tea.Cmd that opens a URL in the default browser.

@@ -59,6 +59,7 @@ type MoveState struct {
 	Folders         []string        // All folder paths
 	FilteredFolders []string        // Filtered folder paths based on search
 	FolderIdx       int             // Selected folder index in filtered list
+	ItemsToMove     []Item          // Items to move (for batch operations)
 }
 
 // NewMoveState creates a new MoveState with initialized input.
@@ -78,6 +79,7 @@ func (m *MoveState) Reset() {
 	m.Folders = nil
 	m.FilteredFolders = nil
 	m.FolderIdx = 0
+	m.ItemsToMove = nil
 }
 
 // SearchState holds state for global search and local filtering.
@@ -135,6 +137,9 @@ type ModalState struct {
 	EditItemID string          // ID of item being edited (folder or bookmark)
 	CutMode    bool            // true = cut (buffer), false = delete (no buffer)
 
+	// Batch delete support
+	DeleteItems []Item // items to delete (for batch operations)
+
 	// Tag autocompletion
 	AllTags          []string // All unique tags in store
 	TagSuggestions   []string // Filtered suggestions for current input
@@ -173,8 +178,56 @@ func (m *ModalState) ResetInputs() {
 	m.TagsInput.Reset()
 	m.EditItemID = ""
 	m.CutMode = false
+	m.DeleteItems = nil
 	m.TagSuggestions = nil
 	m.TagSuggestionIdx = -1
+}
+
+// SelectionState holds state for visual selection mode.
+type SelectionState struct {
+	Selected    map[string]bool // item IDs that are selected
+	VisualMode  bool            // true when in visual line mode (V key)
+	AnchorIndex int             // anchor point for visual line mode range selection
+}
+
+// NewSelectionState creates an empty SelectionState.
+func NewSelectionState() SelectionState {
+	return SelectionState{
+		Selected:    make(map[string]bool),
+		VisualMode:  false,
+		AnchorIndex: -1,
+	}
+}
+
+// Reset clears all selection state.
+func (s *SelectionState) Reset() {
+	s.Selected = make(map[string]bool)
+	s.VisualMode = false
+	s.AnchorIndex = -1
+}
+
+// Toggle adds or removes an item from selection.
+func (s *SelectionState) Toggle(id string) {
+	if s.Selected[id] {
+		delete(s.Selected, id)
+	} else {
+		s.Selected[id] = true
+	}
+}
+
+// IsSelected returns true if the item ID is selected.
+func (s *SelectionState) IsSelected(id string) bool {
+	return s.Selected[id]
+}
+
+// Count returns the number of selected items.
+func (s *SelectionState) Count() int {
+	return len(s.Selected)
+}
+
+// HasSelection returns true if any items are selected.
+func (s *SelectionState) HasSelection() bool {
+	return len(s.Selected) > 0
 }
 
 // BrowserNav holds state for folder navigation in the miller columns.

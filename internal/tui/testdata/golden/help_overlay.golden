@@ -11,13 +11,13 @@
   *    pin/unpin      p/P  paste                                                
   s    search         c    confirm toggle                                       
   /    filter                                                                   
-  o    sort                                                                     
-  m    move           [?/q/esc] close                                           
+  o    sort           select                                                    
+  m    move           v    select item                                          
+                      V    visual mode                                          
+                      Esc  clear select                                         
                                                                                 
                                                                                 
-                                                                                
-                                                                                
-                                                                                
+                      [?/q/esc] close                                           
                                                                                 
                                                                                 
                                                                                 

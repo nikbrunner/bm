@@ -4,22 +4,24 @@ import "github.com/charmbracelet/lipgloss"
 
 // Styles holds all lipgloss styles for the TUI.
 type Styles struct {
-	App          lipgloss.Style
-	Pane         lipgloss.Style
-	PaneActive   lipgloss.Style
-	Title        lipgloss.Style
-	Item         lipgloss.Style
-	ItemSelected lipgloss.Style
-	Folder       lipgloss.Style
-	Bookmark     lipgloss.Style
-	URL          lipgloss.Style
-	Tag          lipgloss.Style
-	Date         lipgloss.Style
-	Help         lipgloss.Style
-	Empty        lipgloss.Style
-	HintKey      lipgloss.Style // Key portion of hints (e.g., "Enter", "j/k")
-	HintDesc     lipgloss.Style // Description portion of hints (e.g., "confirm", "move")
-	Breadcrumb   lipgloss.Style // Folder path breadcrumb above Miller columns
+	App              lipgloss.Style
+	Pane             lipgloss.Style
+	PaneActive       lipgloss.Style
+	Title            lipgloss.Style
+	Item             lipgloss.Style
+	ItemSelected     lipgloss.Style
+	ItemMarked       lipgloss.Style // Selected but not cursor-focused
+	ItemMarkedCursor lipgloss.Style // Selected AND cursor-focused
+	Folder           lipgloss.Style
+	Bookmark         lipgloss.Style
+	URL              lipgloss.Style
+	Tag              lipgloss.Style
+	Date             lipgloss.Style
+	Help             lipgloss.Style
+	Empty            lipgloss.Style
+	HintKey          lipgloss.Style // Key portion of hints (e.g., "Enter", "j/k")
+	HintDesc         lipgloss.Style // Description portion of hints (e.g., "confirm", "move")
+	Breadcrumb       lipgloss.Style // Folder path breadcrumb above Miller columns
 }
 
 // DefaultStyles returns the default style configuration.
@@ -59,6 +61,17 @@ func DefaultStyles() Styles {
 			PaddingLeft(1).
 			Background(accent).
 			Foreground(lipgloss.Color("#1A1A1A")),
+
+		ItemMarked: lipgloss.NewStyle().
+			PaddingLeft(1).
+			Background(lipgloss.AdaptiveColor{Light: "#9A9A70", Dark: "#7A7A50"}).
+			Foreground(lipgloss.Color("#1A1A1A")),
+
+		ItemMarkedCursor: lipgloss.NewStyle().
+			PaddingLeft(1).
+			Background(accent).
+			Foreground(lipgloss.Color("#1A1A1A")).
+			Bold(true),
 
 		Folder: lipgloss.NewStyle().
 			Foreground(primary),
