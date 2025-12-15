@@ -19,7 +19,7 @@ go install ./cmd/bm
 go test ./...
 
 # Run a single test
-go test ./internal/storage -run TestJSONStorage
+go test ./internal/storage -run TestSQLiteStorage
 
 # Format code
 go fmt ./...
@@ -42,7 +42,7 @@ go fmt ./...
 cmd/bm/main.go          # CLI entry point with subcommands (import/export/search/TUI)
 internal/
   model/                # Core data types (Bookmark, Folder, Store)
-  storage/              # JSON file persistence (~/.config/bm/bookmarks.json)
+  storage/              # SQLite persistence (~/.config/bm/bookmarks.db)
   tui/                  # Bubbletea TUI (App model, View, Styles, Keys)
   search/               # Fuzzy search for CLI quick-search mode
   picker/               # Simple TUI picker for CLI search results
@@ -79,4 +79,4 @@ internal/
 
 ## Data Storage
 
-Bookmarks stored at `~/.config/bm/bookmarks.json` as flat JSON with `folders[]` and `bookmarks[]` arrays. IDs are UUIDs. The file is designed to be human-readable and version-controllable.
+Bookmarks stored in SQLite database at `~/.config/bm/bookmarks.db`. Schema includes `folders` and `bookmarks` tables with UUID primary keys. Settings stored in `~/.config/bm/config.json`.

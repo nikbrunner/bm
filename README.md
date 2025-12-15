@@ -1,6 +1,6 @@
 # bm
 
-A vim-style TUI bookmark manager for the terminal. Ranger/yazi-inspired with Miller columns, keyboard-driven navigation, and simple JSON storage.
+A vim-style TUI bookmark manager for the terminal. Ranger/yazi-inspired with Miller columns, keyboard-driven navigation, and SQLite storage.
 
 ## Features
 
@@ -9,7 +9,7 @@ A vim-style TUI bookmark manager for the terminal. Ranger/yazi-inspired with Mil
 - **Vim keybindings** - `j/k`, `h/l`, `gg/G`, `y`, `d`, `x`, `p`
 - **Fuzzy search** - Global search across all bookmarks
 - **Browser integration** - Import/export standard HTML bookmark format
-- **Simple storage** - Version-controllable JSON file
+- **SQLite storage** - Fast and reliable local database
 
 ## Installation
 
@@ -103,29 +103,9 @@ bm export ~/backup/bookmarks.html     # Export to custom path
 
 ## Data Storage
 
-Bookmarks are stored in `~/.config/bm/bookmarks.json`:
+Bookmarks are stored in a SQLite database at `~/.config/bm/bookmarks.db`.
 
-```json
-{
-  "folders": [
-    { "id": "uuid", "name": "Development", "parentId": null, "pinned": false }
-  ],
-  "bookmarks": [
-    {
-      "id": "uuid",
-      "title": "GitHub",
-      "url": "https://github.com",
-      "folderId": "uuid",
-      "tags": ["code", "git"],
-      "createdAt": "2025-01-15T10:30:00Z",
-      "visitedAt": "2025-01-20T14:22:00Z",
-      "pinned": true
-    }
-  ]
-}
-```
-
-The file is human-readable and can be version-controlled.
+Settings are stored in `~/.config/bm/config.json`.
 
 ## Development
 

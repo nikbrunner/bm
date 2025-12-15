@@ -36,9 +36,6 @@ func main() {
 		case "reset":
 			runReset()
 			return
-		case "migrate":
-			runMigrate()
-			return
 		case "import":
 			if len(os.Args) < 3 {
 				fmt.Fprintf(os.Stderr, "Usage: bm import <file.html>\n")
@@ -75,7 +72,6 @@ Usage:
   bm add                Quick add URL from clipboard to Read Later
   bm init               Create config with sample data
   bm reset              Clear all data (requires confirmation)
-  bm migrate            Migrate from JSON to SQLite storage
   bm import <file>      Import bookmarks from HTML
   bm export [path]      Export bookmarks to HTML
   bm help               Show this help
@@ -115,11 +111,8 @@ TUI Keybindings:
     q           Quit
 
 Data Storage:
-  ~/.config/bm/bookmarks.db     SQLite database (preferred)
-  ~/.config/bm/bookmarks.json   JSON fallback (legacy)
+  ~/.config/bm/bookmarks.db     SQLite database
   ~/.config/bm/config.json      Settings (quick add folder, etc.)
-
-Run 'bm migrate' to convert JSON to SQLite.
 `
 	fmt.Print(help)
 }
@@ -419,7 +412,7 @@ func findOrCreateFolder(store *model.Store, name string) string {
 
 // runInit creates the config and data files with sample data.
 func runInit() {
-	dataPath, err := storage.DefaultConfigPath()
+	dataPath, err := storage.DefaultSQLitePath()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error getting data path: %v\n", err)
 		os.Exit(1)
@@ -499,8 +492,14 @@ func runInit() {
 	}
 
 	// Save data file
-	jsonStorage := storage.NewJSONStorage(dataPath)
-	if err := jsonStorage.Save(store); err != nil {
+	sqliteStorage, err := storage.NewSQLiteStorage(dataPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating database: %v\n", err)
+		os.Exit(1)
+	}
+	defer sqliteStorage.Close()
+
+	if err := sqliteStorage.Save(store); err != nil {
 		fmt.Fprintf(os.Stderr, "Error saving data: %v\n", err)
 		os.Exit(1)
 	}
@@ -573,70 +572,3 @@ func loadStorage() (*model.Store, storage.Storage, func()) {
 	return store, dataStorage, closeFunc
 }
 
-// runMigrate migrates data from JSON to SQLite storage.
-func runMigrate() {
-	jsonPath, err := storage.DefaultConfigPath()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error getting JSON path: %v\n", err)
-		os.Exit(1)
-	}
-
-	sqlitePath, err := storage.DefaultSQLitePath()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error getting SQLite path: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Check if JSON file exists
-	if _, err := os.Stat(jsonPath); os.IsNotExist(err) {
-		fmt.Printf("No JSON data to migrate at: %s\n", jsonPath)
-		os.Exit(0)
-	}
-
-	// Check if SQLite already exists
-	if _, err := os.Stat(sqlitePath); err == nil {
-		fmt.Printf("SQLite database already exists: %s\n", sqlitePath)
-		fmt.Print("Overwrite? (yes/no): ")
-		var confirm string
-		_, _ = fmt.Scanln(&confirm)
-		if confirm != "yes" {
-			fmt.Println("Aborted")
-			os.Exit(0)
-		}
-		if err := os.Remove(sqlitePath); err != nil {
-			fmt.Fprintf(os.Stderr, "Error removing existing database: %v\n", err)
-			os.Exit(1)
-		}
-		// Also remove WAL files if they exist
-		os.Remove(sqlitePath + "-wal")
-		os.Remove(sqlitePath + "-shm")
-	}
-
-	// Load from JSON
-	jsonStorage := storage.NewJSONStorage(jsonPath)
-	store, err := jsonStorage.Load()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading JSON: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Save to SQLite
-	sqliteStorage, err := storage.NewSQLiteStorage(sqlitePath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating SQLite: %v\n", err)
-		os.Exit(1)
-	}
-	defer sqliteStorage.Close()
-
-	if err := sqliteStorage.Save(store); err != nil {
-		fmt.Fprintf(os.Stderr, "Error saving to SQLite: %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Printf("Migrated %d folders and %d bookmarks\n",
-		len(store.Folders), len(store.Bookmarks))
-	fmt.Printf("From: %s\n", jsonPath)
-	fmt.Printf("To:   %s\n", sqlitePath)
-	fmt.Println("\nYour JSON file has been preserved as a backup.")
-	fmt.Println("bm will now use SQLite for all operations.")
-}
