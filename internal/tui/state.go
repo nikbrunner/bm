@@ -8,11 +8,13 @@ import (
 
 // QuickAddState holds state for the AI-powered quick add feature.
 type QuickAddState struct {
-	Input     textinput.Model // URL input
-	Response  *ai.Response    // AI suggestion
-	Error     error           // AI error (if any)
-	Folders   []string        // Available folder paths for picker
-	FolderIdx int             // Selected folder index in picker
+	Input           textinput.Model // URL input
+	Response        *ai.Response    // AI suggestion
+	Error           error           // AI error (if any)
+	Folders         []string        // Available folder paths for picker (ordered)
+	FilteredFolders []string        // Filtered folder paths based on search
+	FolderIdx       int             // Selected folder index in filtered list
+	FilterInput     textinput.Model // Filter input for folder search
 }
 
 // NewQuickAddState creates a new QuickAddState with initialized input.
@@ -21,8 +23,15 @@ func NewQuickAddState(cfg layout.LayoutConfig) QuickAddState {
 	input.Placeholder = "https://..."
 	input.CharLimit = cfg.Input.URLCharLimit
 	input.Width = cfg.Input.QuickAddWidth
+
+	filterInput := textinput.New()
+	filterInput.Placeholder = "Filter folders..."
+	filterInput.CharLimit = cfg.Input.TitleCharLimit
+	filterInput.Width = cfg.Input.StandardWidth
+
 	return QuickAddState{
-		Input: input,
+		Input:       input,
+		FilterInput: filterInput,
 	}
 }
 
@@ -32,7 +41,16 @@ func (q *QuickAddState) Reset() {
 	q.Response = nil
 	q.Error = nil
 	q.Folders = nil
+	q.FilteredFolders = nil
 	q.FolderIdx = 0
+	q.FilterInput.Reset()
+}
+
+// QuickAddCreateFolderState holds state for creating a new folder during quick add.
+type QuickAddCreateFolderState struct {
+	NewFolderName string   // The folder name to create (from search query)
+	ParentOptions []string // Available parent folders (root + all folders)
+	ParentIdx     int      // Selected parent index
 }
 
 // MoveState holds state for moving items to different folders.

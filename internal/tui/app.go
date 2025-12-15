@@ -38,11 +38,12 @@ const (
 	ModeSearch
 	ModeFilter // Local filter for current folder
 	ModeHelp
-	ModeQuickAdd         // URL input for AI quick add
-	ModeQuickAddLoading  // Waiting for AI response
-	ModeQuickAddConfirm  // Review/edit AI suggestion
-	ModeReadLaterLoading // Waiting for AI response for read later
-	ModeMove             // Move item to different folder
+	ModeQuickAdd             // URL input for AI quick add
+	ModeQuickAddLoading      // Waiting for AI response
+	ModeQuickAddConfirm      // Review/edit AI suggestion
+	ModeQuickAddCreateFolder // Create new folder during quick add
+	ModeReadLaterLoading     // Waiting for AI response for read later
+	ModeMove                 // Move item to different folder
 )
 
 // SortMode represents the current sort mode.
@@ -138,7 +139,8 @@ type App struct {
 	modal ModalState
 
 	// Quick add (AI-powered) state
-	quickAdd QuickAddState
+	quickAdd             QuickAddState
+	quickAddCreateFolder QuickAddCreateFolderState
 
 	// Read later state (URL being processed)
 	readLaterURL string
@@ -602,9 +604,14 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.modal.TagsInput.Reset()
 			a.modal.TagsInput.SetValue(strings.Join(msg.response.Tags, ", "))
 
-			// Build folder picker options
-			a.quickAdd.Folders = a.buildFolderPaths()
-			a.quickAdd.FolderIdx = a.findFolderIndex(msg.response.FolderPath)
+			// Build folder picker options with smart ordering
+			a.quickAdd.Folders = a.buildOrderedFolderPaths(a.browser.CurrentFolderID, msg.response.FolderPath)
+			a.quickAdd.FilteredFolders = a.quickAdd.Folders
+			a.quickAdd.FilterInput.Reset()
+
+			// Find the AI suggested folder (normalize path)
+			aiPath := "/" + strings.TrimPrefix(msg.response.FolderPath, "/")
+			a.quickAdd.FolderIdx = a.findFolderIndex(aiPath)
 
 			a.modal.TitleInput.Focus()
 			return a, a.modal.TitleInput.Focus()
@@ -1384,57 +1391,82 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// Handle quick add confirmation mode
 	if a.mode == ModeQuickAddConfirm {
+		// Check if folder filter is focused (not title and not tags)
+		folderFilterFocused := a.quickAdd.FilterInput.Focused()
+
 		switch msg.Type {
 		case tea.KeyEsc:
 			a.mode = ModeNormal
 			return a, nil
 		case tea.KeyEnter:
+			// Check if we should create a new folder (no filtered results and filter has text)
+			if folderFilterFocused && len(a.quickAdd.FilteredFolders) == 0 && a.quickAdd.FilterInput.Value() != "" {
+				// Enter folder creation mode
+				a.quickAddCreateFolder.NewFolderName = a.quickAdd.FilterInput.Value()
+				a.quickAddCreateFolder.ParentOptions = a.buildFolderPaths()
+				a.quickAddCreateFolder.ParentIdx = 0
+				a.mode = ModeQuickAddCreateFolder
+				return a, nil
+			}
 			// Save the bookmark with edited values
 			return a.submitQuickAdd()
 		case tea.KeyTab:
-			// Cycle through: title -> folder -> tags -> title
+			// Cycle through: title -> folder filter -> tags -> title
 			if a.modal.TitleInput.Focused() {
 				a.modal.TitleInput.Blur()
-				// Focus is now on folder picker (no input to focus)
+				a.quickAdd.FilterInput.Focus()
+				return a, a.quickAdd.FilterInput.Focus()
+			} else if folderFilterFocused {
+				a.quickAdd.FilterInput.Blur()
+				a.modal.TagsInput.Focus()
+				return a, a.modal.TagsInput.Focus()
 			} else if a.modal.TagsInput.Focused() {
 				a.modal.TagsInput.Blur()
 				a.modal.TitleInput.Focus()
 				return a, a.modal.TitleInput.Focus()
-			} else {
-				// Was on folder picker, move to tags
-				a.modal.TagsInput.Focus()
-				return a, a.modal.TagsInput.Focus()
 			}
 			return a, nil
-		case tea.KeyUp:
-			// Navigate folder picker up (when not in text input)
-			if !a.modal.TitleInput.Focused() && !a.modal.TagsInput.Focused() {
+		case tea.KeyUp, tea.KeyCtrlP:
+			// Navigate folder picker up (when folder filter focused or no input focused)
+			if folderFilterFocused || (!a.modal.TitleInput.Focused() && !a.modal.TagsInput.Focused()) {
 				if a.quickAdd.FolderIdx > 0 {
 					a.quickAdd.FolderIdx--
+				} else if len(a.quickAdd.FilteredFolders) > 0 {
+					a.quickAdd.FolderIdx = len(a.quickAdd.FilteredFolders) - 1
 				}
 			}
 			return a, nil
-		case tea.KeyDown:
-			// Navigate folder picker down (when not in text input)
-			if !a.modal.TitleInput.Focused() && !a.modal.TagsInput.Focused() {
-				if a.quickAdd.FolderIdx < len(a.quickAdd.Folders)-1 {
+		case tea.KeyDown, tea.KeyCtrlN:
+			// Navigate folder picker down (when folder filter focused or no input focused)
+			if folderFilterFocused || (!a.modal.TitleInput.Focused() && !a.modal.TagsInput.Focused()) {
+				if len(a.quickAdd.FilteredFolders) > 0 {
 					a.quickAdd.FolderIdx++
+					if a.quickAdd.FolderIdx >= len(a.quickAdd.FilteredFolders) {
+						a.quickAdd.FolderIdx = 0
+					}
 				}
 			}
 			return a, nil
 		}
 
-		// Handle j/k for folder navigation when not in text input
-		if msg.Type == tea.KeyRunes && !a.modal.TitleInput.Focused() && !a.modal.TagsInput.Focused() {
+		// Handle j/k for folder navigation when folder filter is focused
+		if msg.Type == tea.KeyRunes && folderFilterFocused {
+			// Don't intercept j/k when filter has focus - let them type
+		} else if msg.Type == tea.KeyRunes && !a.modal.TitleInput.Focused() && !a.modal.TagsInput.Focused() {
 			switch string(msg.Runes) {
 			case "j":
-				if a.quickAdd.FolderIdx < len(a.quickAdd.Folders)-1 {
+				if len(a.quickAdd.FilteredFolders) > 0 {
 					a.quickAdd.FolderIdx++
+					if a.quickAdd.FolderIdx >= len(a.quickAdd.FilteredFolders) {
+						a.quickAdd.FolderIdx = 0
+					}
 				}
 				return a, nil
 			case "k":
 				if a.quickAdd.FolderIdx > 0 {
 					a.quickAdd.FolderIdx--
+				} else if len(a.quickAdd.FilteredFolders) > 0 {
+					a.quickAdd.FolderIdx = len(a.quickAdd.FilteredFolders) - 1
 				}
 				return a, nil
 			}
@@ -1446,8 +1478,82 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.modal.TitleInput, cmd = a.modal.TitleInput.Update(msg)
 		} else if a.modal.TagsInput.Focused() {
 			a.modal.TagsInput, cmd = a.modal.TagsInput.Update(msg)
+		} else if folderFilterFocused {
+			a.quickAdd.FilterInput, cmd = a.quickAdd.FilterInput.Update(msg)
+			a.updateQuickAddFilter()
 		}
 		return a, cmd
+	}
+
+	// Handle quick add create folder mode (parent picker)
+	if a.mode == ModeQuickAddCreateFolder {
+		switch msg.Type {
+		case tea.KeyEsc:
+			// Cancel and return to confirm mode
+			a.mode = ModeQuickAddConfirm
+			return a, nil
+		case tea.KeyEnter:
+			// Create folder and return to confirm mode
+			if len(a.quickAddCreateFolder.ParentOptions) > 0 {
+				parentPath := a.quickAddCreateFolder.ParentOptions[a.quickAddCreateFolder.ParentIdx]
+				var newFolderPath string
+				if parentPath == "/" {
+					newFolderPath = a.quickAddCreateFolder.NewFolderName
+				} else {
+					newFolderPath = parentPath + "/" + a.quickAddCreateFolder.NewFolderName
+				}
+
+				// Create the folder
+				a.store.GetOrCreateFolderByPath(newFolderPath)
+
+				// Rebuild folder paths and select the new folder
+				a.quickAdd.Folders = a.buildOrderedFolderPaths(a.browser.CurrentFolderID, "")
+				a.quickAdd.FilteredFolders = a.quickAdd.Folders
+				a.quickAdd.FilterInput.Reset()
+				a.quickAdd.FolderIdx = a.findFolderIndex("/" + newFolderPath)
+
+				a.mode = ModeQuickAddConfirm
+				a.setStatus("Created folder: " + newFolderPath)
+			}
+			return a, nil
+		case tea.KeyUp, tea.KeyCtrlP:
+			if a.quickAddCreateFolder.ParentIdx > 0 {
+				a.quickAddCreateFolder.ParentIdx--
+			} else if len(a.quickAddCreateFolder.ParentOptions) > 0 {
+				a.quickAddCreateFolder.ParentIdx = len(a.quickAddCreateFolder.ParentOptions) - 1
+			}
+			return a, nil
+		case tea.KeyDown, tea.KeyCtrlN:
+			if len(a.quickAddCreateFolder.ParentOptions) > 0 {
+				a.quickAddCreateFolder.ParentIdx++
+				if a.quickAddCreateFolder.ParentIdx >= len(a.quickAddCreateFolder.ParentOptions) {
+					a.quickAddCreateFolder.ParentIdx = 0
+				}
+			}
+			return a, nil
+		}
+
+		// Handle j/k for navigation
+		if msg.Type == tea.KeyRunes {
+			switch string(msg.Runes) {
+			case "j":
+				if len(a.quickAddCreateFolder.ParentOptions) > 0 {
+					a.quickAddCreateFolder.ParentIdx++
+					if a.quickAddCreateFolder.ParentIdx >= len(a.quickAddCreateFolder.ParentOptions) {
+						a.quickAddCreateFolder.ParentIdx = 0
+					}
+				}
+				return a, nil
+			case "k":
+				if a.quickAddCreateFolder.ParentIdx > 0 {
+					a.quickAddCreateFolder.ParentIdx--
+				} else if len(a.quickAddCreateFolder.ParentOptions) > 0 {
+					a.quickAddCreateFolder.ParentIdx = len(a.quickAddCreateFolder.ParentOptions) - 1
+				}
+				return a, nil
+			}
+		}
+		return a, nil
 	}
 
 	switch msg.Type {
@@ -1650,11 +1756,13 @@ func (a App) submitQuickAdd() (tea.Model, tea.Cmd) {
 
 	// Get or create the selected folder
 	var folderID *string
-	if a.quickAdd.FolderIdx > 0 && a.quickAdd.FolderIdx < len(a.quickAdd.Folders) {
-		folderPath := a.quickAdd.Folders[a.quickAdd.FolderIdx]
-		folder, _ := a.store.GetOrCreateFolderByPath(folderPath)
-		if folder != nil {
-			folderID = &folder.ID
+	if a.quickAdd.FolderIdx >= 0 && a.quickAdd.FolderIdx < len(a.quickAdd.FilteredFolders) {
+		folderPath := a.quickAdd.FilteredFolders[a.quickAdd.FolderIdx]
+		if folderPath != "/" {
+			folder, _ := a.store.GetOrCreateFolderByPath(folderPath)
+			if folder != nil {
+				folderID = &folder.ID
+			}
 		}
 	}
 
@@ -2065,14 +2173,67 @@ func (a *App) collectFolderPaths(paths *[]string, parentID *string, prefix strin
 	}
 }
 
-// findFolderIndex finds the index of a folder path in quickAddFolders.
+// buildOrderedFolderPaths returns folder paths with smart ordering:
+// 1. Current folder (if in one)
+// 2. AI suggestion (if different from current)
+// 3. Root
+// 4. All other folders alphabetically
+func (a *App) buildOrderedFolderPaths(currentFolderID *string, aiSuggestion string) []string {
+	paths := []string{}
+
+	// 1. Current folder (if in one)
+	if currentFolderID != nil {
+		currentPath := a.store.GetFolderPath(currentFolderID)
+		paths = append(paths, currentPath)
+	}
+
+	// 2. AI suggestion (if different from current)
+	if aiSuggestion != "" {
+		aiPath := "/" + strings.TrimPrefix(aiSuggestion, "/")
+		alreadyIncluded := len(paths) > 0 && paths[0] == aiPath
+		if !alreadyIncluded {
+			paths = append(paths, aiPath)
+		}
+	}
+
+	// 3. Root (if not already included)
+	hasRoot := false
+	for _, p := range paths {
+		if p == "/" {
+			hasRoot = true
+			break
+		}
+	}
+	if !hasRoot {
+		paths = append(paths, "/")
+	}
+
+	// 4. All other folders alphabetically
+	allFolders := a.buildFolderPaths()
+	for _, folder := range allFolders {
+		included := false
+		for _, p := range paths {
+			if p == folder {
+				included = true
+				break
+			}
+		}
+		if !included {
+			paths = append(paths, folder)
+		}
+	}
+
+	return paths
+}
+
+// findFolderIndex finds the index of a folder path in quickAdd FilteredFolders.
 func (a *App) findFolderIndex(path string) int {
-	for i, p := range a.quickAdd.Folders {
+	for i, p := range a.quickAdd.FilteredFolders {
 		if p == path {
 			return i
 		}
 	}
-	// Default to root if not found
+	// Default to first item if not found
 	return 0
 }
 
@@ -2103,6 +2264,25 @@ func (a *App) updateMoveFilter() {
 	// Reset index if out of bounds
 	if a.move.FolderIdx >= len(a.move.FilteredFolders) {
 		a.move.FolderIdx = 0
+	}
+}
+
+// updateQuickAddFilter filters quickAdd folders based on the filter input.
+func (a *App) updateQuickAddFilter() {
+	query := strings.ToLower(a.quickAdd.FilterInput.Value())
+	if query == "" {
+		a.quickAdd.FilteredFolders = a.quickAdd.Folders
+	} else {
+		a.quickAdd.FilteredFolders = nil
+		for _, folder := range a.quickAdd.Folders {
+			if strings.Contains(strings.ToLower(folder), query) {
+				a.quickAdd.FilteredFolders = append(a.quickAdd.FilteredFolders, folder)
+			}
+		}
+	}
+	// Reset index if out of bounds
+	if a.quickAdd.FolderIdx >= len(a.quickAdd.FilteredFolders) {
+		a.quickAdd.FolderIdx = 0
 	}
 }
 

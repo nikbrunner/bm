@@ -83,6 +83,8 @@ func (a App) getContextualHints() HintSet {
 		return a.getQuickAddLoadingHints()
 	case ModeQuickAddConfirm:
 		return a.getQuickAddConfirmHints()
+	case ModeQuickAddCreateFolder:
+		return a.getQuickAddCreateFolderHints()
 	case ModeReadLaterLoading:
 		return a.getReadLaterLoadingHints()
 	case ModeHelp:
@@ -245,9 +247,25 @@ func (a App) getQuickAddConfirmHints() HintSet {
 		Nav: []Hint{
 			{Key: "Tab", Desc: "next"},
 			{Key: "↑/↓", Desc: "folder"},
+			{Key: "type", Desc: "search"},
 		},
 		Action: []Hint{
 			{Key: "Enter", Desc: "save"},
+		},
+		System: []Hint{
+			{Key: "Esc", Desc: "cancel"},
+		},
+	}
+}
+
+// getQuickAddCreateFolderHints returns hints for ModeQuickAddCreateFolder.
+func (a App) getQuickAddCreateFolderHints() HintSet {
+	return HintSet{
+		Nav: []Hint{
+			{Key: "j/k", Desc: "select"},
+		},
+		Action: []Hint{
+			{Key: "Enter", Desc: "create"},
 		},
 		System: []Hint{
 			{Key: "Esc", Desc: "cancel"},

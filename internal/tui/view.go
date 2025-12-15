@@ -290,6 +290,9 @@ func (a App) renderModal() string {
 	case ModeQuickAddConfirm:
 		return a.renderQuickAddConfirm()
 
+	case ModeQuickAddCreateFolder:
+		return a.renderQuickAddCreateFolder()
+
 	case ModeMove:
 		// Get item being moved
 		displayItems := a.getDisplayItems()
@@ -811,25 +814,50 @@ func (a App) renderQuickAddConfirm() string {
 	content.WriteString(a.modal.TitleInput.View())
 	content.WriteString("\n\n")
 
-	// Folder picker
+	// Folder section with filter input
+	folderFilterFocused := a.quickAdd.FilterInput.Focused()
 	folderLabel := "Folder:"
-	if !a.modal.TitleInput.Focused() && !a.modal.TagsInput.Focused() {
+	if folderFilterFocused {
 		folderLabel = a.styles.Tag.Render("Folder:")
 	}
 	content.WriteString(folderLabel + "\n")
 
+	// Filter input
+	content.WriteString(a.quickAdd.FilterInput.View())
+	content.WriteString("\n")
+
 	// Show folder options with selection
 	visibleFolders := a.layoutConfig.Modal.QuickAddFoldersVisible
-	start, end := layout.CalculateVisibleListItems(visibleFolders, a.quickAdd.FolderIdx, len(a.quickAdd.Folders))
 
-	for i := start; i < end; i++ {
-		folder := a.quickAdd.Folders[i]
-		if i == a.quickAdd.FolderIdx {
-			content.WriteString(a.styles.ItemSelected.Render("> " + folder))
+	if len(a.quickAdd.FilteredFolders) == 0 {
+		// No matches - show create option
+		if a.quickAdd.FilterInput.Value() != "" {
+			createOption := "[Create: " + a.quickAdd.FilterInput.Value() + "]"
+			content.WriteString(a.styles.ItemSelected.Render("> " + createOption))
+			content.WriteString("\n")
 		} else {
-			content.WriteString("  " + folder)
+			content.WriteString(a.styles.Empty.Render("No folders"))
+			content.WriteString("\n")
 		}
-		content.WriteString("\n")
+	} else {
+		start, end := layout.CalculateVisibleListItems(visibleFolders, a.quickAdd.FolderIdx, len(a.quickAdd.FilteredFolders))
+
+		for i := start; i < end; i++ {
+			folder := a.quickAdd.FilteredFolders[i]
+
+			// Add indicator for special folders
+			displayFolder := folder
+			if i == 0 && len(a.quickAdd.Folders) > 0 && folder == a.quickAdd.Folders[0] && a.browser.CurrentFolderID != nil {
+				displayFolder += " (current)"
+			}
+
+			if i == a.quickAdd.FolderIdx {
+				content.WriteString(a.styles.ItemSelected.Render("> " + displayFolder))
+			} else {
+				content.WriteString("  " + displayFolder)
+			}
+			content.WriteString("\n")
+		}
 	}
 	content.WriteString("\n")
 
@@ -840,6 +868,52 @@ func (a App) renderQuickAddConfirm() string {
 	}
 	content.WriteString(tagsLabel + "\n")
 	content.WriteString(a.modal.TagsInput.View())
+
+	// Place modal in center, then add help bar at bottom
+	modal := lipgloss.Place(
+		a.width,
+		a.height-3,
+		lipgloss.Center,
+		lipgloss.Center,
+		modalStyle.Render(content.String()),
+	)
+
+	return lipgloss.JoinVertical(lipgloss.Left, modal, a.renderHelpBar())
+}
+
+// renderQuickAddCreateFolder renders the parent folder picker for creating a new folder.
+func (a App) renderQuickAddCreateFolder() string {
+	modalWidth := layout.CalculateModalWidth(a.width, a.layoutConfig.Modal.DefaultWidthPercent, a.layoutConfig.Modal)
+
+	accent := lipgloss.AdaptiveColor{Light: "#4A7070", Dark: "#5F8787"}
+	modalStyle := lipgloss.NewStyle().
+		Border(lipgloss.ThickBorder()).
+		BorderForeground(accent).
+		Padding(1, 2).
+		Width(modalWidth)
+
+	var content strings.Builder
+	content.WriteString(a.styles.Title.Render("Create Folder"))
+	content.WriteString("\n\n")
+	content.WriteString("Create '" + a.quickAddCreateFolder.NewFolderName + "' in:\n\n")
+
+	// Show parent options with selection
+	visibleFolders := a.layoutConfig.Modal.MoveMaxVisible
+	start, end := layout.CalculateVisibleListItems(visibleFolders, a.quickAddCreateFolder.ParentIdx, len(a.quickAddCreateFolder.ParentOptions))
+
+	for i := start; i < end; i++ {
+		folder := a.quickAddCreateFolder.ParentOptions[i]
+		displayFolder := folder
+		if folder == "/" {
+			displayFolder = "/ (root)"
+		}
+		if i == a.quickAddCreateFolder.ParentIdx {
+			content.WriteString(a.styles.ItemSelected.Render("> " + displayFolder))
+		} else {
+			content.WriteString("  " + displayFolder)
+		}
+		content.WriteString("\n")
+	}
 
 	// Place modal in center, then add help bar at bottom
 	modal := lipgloss.Place(
