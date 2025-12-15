@@ -86,3 +86,24 @@ func DefaultConfigPath() (string, error) {
 	}
 	return filepath.Join(homeDir, ".config", "bm", "bookmarks.json"), nil
 }
+
+// OpenStorage opens the appropriate storage backend.
+// Prefers SQLite if the database file exists, otherwise falls back to JSON.
+func OpenStorage() (Storage, error) {
+	sqlitePath, err := DefaultSQLitePath()
+	if err != nil {
+		return nil, err
+	}
+
+	// If SQLite database exists, use it
+	if _, err := os.Stat(sqlitePath); err == nil {
+		return NewSQLiteStorage(sqlitePath)
+	}
+
+	// Fall back to JSON
+	jsonPath, err := DefaultConfigPath()
+	if err != nil {
+		return nil, err
+	}
+	return NewJSONStorage(jsonPath), nil
+}

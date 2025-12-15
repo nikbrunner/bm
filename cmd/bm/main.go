@@ -36,6 +36,9 @@ func main() {
 		case "reset":
 			runReset()
 			return
+		case "migrate":
+			runMigrate()
+			return
 		case "import":
 			if len(os.Args) < 3 {
 				fmt.Fprintf(os.Stderr, "Usage: bm import <file.html>\n")
@@ -72,6 +75,7 @@ Usage:
   bm add                Quick add URL from clipboard to Read Later
   bm init               Create config with sample data
   bm reset              Clear all data (requires confirmation)
+  bm migrate            Migrate from JSON to SQLite storage
   bm import <file>      Import bookmarks from HTML
   bm export [path]      Export bookmarks to HTML
   bm help               Show this help
@@ -111,32 +115,24 @@ TUI Keybindings:
     q           Quit
 
 Data Storage:
-  ~/.config/bm/bookmarks.json   Bookmark data
+  ~/.config/bm/bookmarks.db     SQLite database (preferred)
+  ~/.config/bm/bookmarks.json   JSON fallback (legacy)
   ~/.config/bm/config.json      Settings (quick add folder, etc.)
+
+Run 'bm migrate' to convert JSON to SQLite.
 `
 	fmt.Print(help)
 }
 
 // runTUI runs the full interactive TUI.
 func runTUI() {
-	dataPath, err := storage.DefaultConfigPath()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error getting data path: %v\n", err)
-		os.Exit(1)
-	}
-
 	configPath, err := storage.DefaultConfigFilePath()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error getting config path: %v\n", err)
 		os.Exit(1)
 	}
 
-	jsonStorage := storage.NewJSONStorage(dataPath)
-	data, err := jsonStorage.Load()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading bookmarks: %v\n", err)
-		os.Exit(1)
-	}
+	store, dataStorage, closeStorage := loadStorage()
 
 	config, err := storage.LoadConfig(configPath)
 	if err != nil {
@@ -144,35 +140,28 @@ func runTUI() {
 		os.Exit(1)
 	}
 
-	app := tui.NewApp(tui.AppParams{Store: data, Config: config})
+	app := tui.NewApp(tui.AppParams{Store: store, Config: config})
 	p := tea.NewProgram(app, tea.WithAltScreen())
 	finalModel, err := p.Run()
 	if err != nil {
+		closeStorage()
 		fmt.Fprintf(os.Stderr, "Error running app: %v\n", err)
 		os.Exit(1)
 	}
 
 	finalApp := finalModel.(tui.App)
-	if err := jsonStorage.Save(finalApp.Store()); err != nil {
+	if err := dataStorage.Save(finalApp.Store()); err != nil {
+		closeStorage()
 		fmt.Fprintf(os.Stderr, "Error saving bookmarks: %v\n", err)
 		os.Exit(1)
 	}
+	closeStorage()
 }
 
 // runQuickSearch performs a fuzzy search and opens the selected bookmark.
 func runQuickSearch(query string) {
-	configPath, err := storage.DefaultConfigPath()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error getting config path: %v\n", err)
-		os.Exit(1)
-	}
-
-	jsonStorage := storage.NewJSONStorage(configPath)
-	store, err := jsonStorage.Load()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading bookmarks: %v\n", err)
-		os.Exit(1)
-	}
+	store, dataStorage, closeStorage := loadStorage()
+	defer closeStorage()
 
 	// Search
 	results := search.FuzzySearchBookmarks(store, query)
@@ -214,7 +203,7 @@ func runQuickSearch(query string) {
 	if bookmark != nil {
 		now := time.Now()
 		bookmark.VisitedAt = &now
-		if err := jsonStorage.Save(store); err != nil {
+		if err := dataStorage.Save(store); err != nil {
 			fmt.Fprintf(os.Stderr, "Error saving bookmarks: %v\n", err)
 		}
 	}
@@ -241,18 +230,8 @@ func openURL(url string) {
 
 // runImport handles the import subcommand.
 func runImport(filePath string) {
-	configPath, err := storage.DefaultConfigPath()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error getting config path: %v\n", err)
-		os.Exit(1)
-	}
-
-	jsonStorage := storage.NewJSONStorage(configPath)
-	store, err := jsonStorage.Load()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading bookmarks: %v\n", err)
-		os.Exit(1)
-	}
+	store, dataStorage, closeStorage := loadStorage()
+	defer closeStorage()
 
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -269,7 +248,7 @@ func runImport(filePath string) {
 
 	added, skipped := store.ImportMerge(folders, bookmarks)
 
-	if err := jsonStorage.Save(store); err != nil {
+	if err := dataStorage.Save(store); err != nil {
 		fmt.Fprintf(os.Stderr, "Error saving bookmarks: %v\n", err)
 		os.Exit(1)
 	}
@@ -294,18 +273,8 @@ func runExport(outputPath string) {
 	}
 
 	// Load store
-	configPath, err := storage.DefaultConfigPath()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error getting config path: %v\n", err)
-		os.Exit(1)
-	}
-
-	jsonStorage := storage.NewJSONStorage(configPath)
-	store, err := jsonStorage.Load()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading bookmarks: %v\n", err)
-		os.Exit(1)
-	}
+	store, _, closeStorage := loadStorage()
+	defer closeStorage()
 
 	// Generate HTML
 	html := exporter.ExportHTML(store)
@@ -377,18 +346,8 @@ func runAdd(args []string) {
 	}
 
 	// Load store
-	dataPath, err := storage.DefaultConfigPath()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error getting data path: %v\n", err)
-		os.Exit(1)
-	}
-
-	jsonStorage := storage.NewJSONStorage(dataPath)
-	store, err := jsonStorage.Load()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading bookmarks: %v\n", err)
-		os.Exit(1)
-	}
+	store, dataStorage, closeStorage := loadStorage()
+	defer closeStorage()
 
 	// Find or create the quick add folder
 	folderID := findOrCreateFolder(store, config.QuickAddFolder)
@@ -432,7 +391,7 @@ func runAdd(args []string) {
 	store.AddBookmark(newBookmark)
 
 	// Save
-	if err := jsonStorage.Save(store); err != nil {
+	if err := dataStorage.Save(store); err != nil {
 		fmt.Fprintf(os.Stderr, "Error saving bookmarks: %v\n", err)
 		os.Exit(1)
 	}
@@ -561,21 +520,11 @@ func runInit() {
 
 // runReset clears all bookmarks and folders.
 func runReset() {
-	configPath, err := storage.DefaultConfigPath()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error getting config path: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Check if file exists
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		fmt.Fprintf(os.Stderr, "No config file found at: %s\n", configPath)
-		fmt.Fprintf(os.Stderr, "Use 'bm init' to create one\n")
-		os.Exit(1)
-	}
+	_, dataStorage, closeStorage := loadStorage()
+	defer closeStorage()
 
 	// Confirm reset
-	fmt.Printf("This will delete all bookmarks and folders in:\n  %s\n\n", configPath)
+	fmt.Print("This will delete all bookmarks and folders.\n\n")
 	fmt.Print("Type 'yes' to confirm: ")
 	var confirm string
 	_, _ = fmt.Scanln(&confirm)
@@ -585,16 +534,109 @@ func runReset() {
 	}
 
 	// Save empty store
-	store := &model.Store{
+	emptyStore := &model.Store{
 		Folders:   []model.Folder{},
 		Bookmarks: []model.Bookmark{},
 	}
 
-	jsonStorage := storage.NewJSONStorage(configPath)
-	if err := jsonStorage.Save(store); err != nil {
-		fmt.Fprintf(os.Stderr, "Error saving config: %v\n", err)
+	if err := dataStorage.Save(emptyStore); err != nil {
+		fmt.Fprintf(os.Stderr, "Error saving: %v\n", err)
 		os.Exit(1)
 	}
 
 	fmt.Println("All data cleared")
+}
+
+// loadStorage opens the appropriate storage backend and returns it with a cleanup function.
+func loadStorage() (*model.Store, storage.Storage, func()) {
+	dataStorage, err := storage.OpenStorage()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error opening storage: %v\n", err)
+		os.Exit(1)
+	}
+
+	store, err := dataStorage.Load()
+	if err != nil {
+		if closer, ok := dataStorage.(interface{ Close() error }); ok {
+			closer.Close()
+		}
+		fmt.Fprintf(os.Stderr, "Error loading bookmarks: %v\n", err)
+		os.Exit(1)
+	}
+
+	closeFunc := func() {
+		if closer, ok := dataStorage.(interface{ Close() error }); ok {
+			closer.Close()
+		}
+	}
+
+	return store, dataStorage, closeFunc
+}
+
+// runMigrate migrates data from JSON to SQLite storage.
+func runMigrate() {
+	jsonPath, err := storage.DefaultConfigPath()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error getting JSON path: %v\n", err)
+		os.Exit(1)
+	}
+
+	sqlitePath, err := storage.DefaultSQLitePath()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error getting SQLite path: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Check if JSON file exists
+	if _, err := os.Stat(jsonPath); os.IsNotExist(err) {
+		fmt.Printf("No JSON data to migrate at: %s\n", jsonPath)
+		os.Exit(0)
+	}
+
+	// Check if SQLite already exists
+	if _, err := os.Stat(sqlitePath); err == nil {
+		fmt.Printf("SQLite database already exists: %s\n", sqlitePath)
+		fmt.Print("Overwrite? (yes/no): ")
+		var confirm string
+		_, _ = fmt.Scanln(&confirm)
+		if confirm != "yes" {
+			fmt.Println("Aborted")
+			os.Exit(0)
+		}
+		if err := os.Remove(sqlitePath); err != nil {
+			fmt.Fprintf(os.Stderr, "Error removing existing database: %v\n", err)
+			os.Exit(1)
+		}
+		// Also remove WAL files if they exist
+		os.Remove(sqlitePath + "-wal")
+		os.Remove(sqlitePath + "-shm")
+	}
+
+	// Load from JSON
+	jsonStorage := storage.NewJSONStorage(jsonPath)
+	store, err := jsonStorage.Load()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading JSON: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Save to SQLite
+	sqliteStorage, err := storage.NewSQLiteStorage(sqlitePath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating SQLite: %v\n", err)
+		os.Exit(1)
+	}
+	defer sqliteStorage.Close()
+
+	if err := sqliteStorage.Save(store); err != nil {
+		fmt.Fprintf(os.Stderr, "Error saving to SQLite: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Migrated %d folders and %d bookmarks\n",
+		len(store.Folders), len(store.Bookmarks))
+	fmt.Printf("From: %s\n", jsonPath)
+	fmt.Printf("To:   %s\n", sqlitePath)
+	fmt.Println("\nYour JSON file has been preserved as a backup.")
+	fmt.Println("bm will now use SQLite for all operations.")
 }
