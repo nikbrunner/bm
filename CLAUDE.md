@@ -41,6 +41,7 @@ go fmt ./...
 ```
 cmd/bm/main.go          # CLI entry point with subcommands (import/export/search/TUI)
 internal/
+  ai/                   # Claude API for AI-powered bookmark analysis
   model/                # Core data types (Bookmark, Folder, Store)
   storage/              # SQLite persistence (~/.config/bm/bookmarks.db)
   tui/                  # Bubbletea TUI (App model, View, Styles, Keys)
@@ -55,27 +56,37 @@ internal/
 **Store Pattern**: `model.Store` holds flat slices of `Folders` and `Bookmarks`. Parent/folder relationships are via `ParentID`/`FolderID` pointer fields (`nil` = root level).
 
 **TUI App Structure**: `tui.App` is the main bubbletea model with:
-- Modal modes: `ModeNormal`, `ModeAddBookmark`, `ModeEditFolder`, `ModeSearch`, `ModeHelp`, `ModeConfirmDelete`
+- Modal modes: `ModeNormal`, `ModeAddBookmark`, `ModeEditFolder`, `ModeSearch`, `ModeHelp`, `ModeConfirmDelete`, `ModeQuickAdd`, `ModeQuickAddLoading`, `ModeQuickAddConfirm`, `ModeMove`, `ModeReadLaterLoading`
 - Focus states: `PanePinned` (leftmost pinned items pane) and `PaneBrowser` (Miller columns)
 - Fuzzy search over all items (not just current folder) via `allItems`/`fuzzyMatches`
 - View renders 3-pane Miller columns (parent | current | preview), or 4-pane when pinned items exist in subfolders
-- Pinned items shown in leftmost pane with `★` prefix; `m` toggles pin/unpin
+- Pinned items shown in leftmost pane with `★` prefix; `*` toggles pin/unpin
 - `confirmDelete` flag (toggled with `c`) controls whether delete/cut shows confirmation
+- Searchable folder picker with smart ordering for quick add and move operations
 
 **Item Union Type**: `tui.Item` wraps either a `Folder` or `Bookmark` for unified list handling.
 
-**CLI Modes**: Subcommands are `help`, `init`, `reset`, `import`, `export`. Anything else is treated as a fuzzy search query. No args opens the full TUI.
+**CLI Modes**: Subcommands are `help`, `init`, `reset`, `add`, `import`, `export`. Anything else is treated as a fuzzy search query. No args opens the full TUI.
 
-**Keybindings**: Single-key actions for editing (`y` yank, `d` delete, `x` cut), `gg` for top. `m` toggles pin/unpin on items. `h` at root switches to pinned pane, `l` returns to browser. `c` toggles delete confirmations (on by default). `?` shows help overlay. `l`/`Enter` opens bookmarks or enters folders.
+**Keybindings**: Single-key actions for editing (`y` yank, `d` delete, `x` cut), `gg` for top. `*` toggles pin/unpin on items. `m` moves items to a different folder. `h` at root switches to pinned pane, `l` returns to browser. `c` toggles delete confirmations (on by default). `?` shows help overlay. `l`/`Enter` opens bookmarks or enters folders. `i` triggers AI quick add, `L` adds to Read Later.
 
 ### Dependencies
 
 - `charmbracelet/bubbletea` - TUI framework
 - `charmbracelet/lipgloss` - Styling
 - `charmbracelet/bubbles` - Text inputs, key bindings
+- `modernc.org/sqlite` - Pure Go SQLite database
 - `sahilm/fuzzy` - Fuzzy matching
 - `atotto/clipboard` - System clipboard
 - `google/uuid` - UUID generation
+
+### AI Integration
+
+The `internal/ai/` package provides Claude API integration for bookmark analysis:
+- Uses `claude-haiku-4-5` model for fast, cost-effective suggestions
+- `SuggestBookmark(url, context)` returns title and tag suggestions
+- `BuildContext(store)` creates context from existing folders/tags for smarter suggestions
+- Requires `ANTHROPIC_API_KEY` environment variable
 
 ## Data Storage
 

@@ -84,23 +84,25 @@ Quick Add Options:
 TUI Keybindings:
   Navigation:
     j/k         Move down/up
-    h/l         Navigate back/forward
+    h/l         Navigate back/forward (l opens bookmarks)
     gg/G        Jump to top/bottom
 
   Actions:
     l/Enter     Open bookmark / enter folder
-    o           Open bookmark in browser
-    L           Quick add from clipboard to Read Later
-    m           Pin/unpin item
+    s           Global fuzzy search
+    /           Filter current folder
+    o           Cycle sort mode
     Y           Copy URL to clipboard
-    /           Global fuzzy search
-    s           Cycle sort mode
+    *           Pin/unpin item
     c           Toggle delete confirmations
 
   Editing:
     a/A         Add bookmark/folder
+    i           AI quick add (requires ANTHROPIC_API_KEY)
+    L           Quick add to Read Later
     e           Edit selected item
-    t           Edit tags (bookmarks only)
+    t           Edit tags
+    m           Move to folder
     y           Yank (copy)
     d           Delete
     x           Cut (delete + buffer)

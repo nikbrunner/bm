@@ -57,6 +57,17 @@ bm export                             # Export to ~/Downloads/bookmarks-export-Y
 bm export ~/backup/bookmarks.html     # Export to custom path
 ```
 
+### AI Features
+
+If you set the `ANTHROPIC_API_KEY` environment variable, bm can use Claude to automatically generate titles and suggest tags for bookmarks:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+bm add                                # AI analyzes URL and suggests title/tags
+```
+
+In the TUI, press `i` for AI quick add or `L` to add from clipboard to Read Later with AI analysis.
+
 ## Keybindings
 
 ### Navigation
@@ -72,12 +83,13 @@ bm export ~/backup/bookmarks.html     # Export to custom path
 
 | Key | Action |
 |-----|--------|
-| `l` / `Enter` | Open URL in browser |
-| `m` | Pin/unpin item (★ shown for pinned) |
-| `Y` | Copy URL to clipboard |
+| `l` / `Enter` | Open bookmark in browser / enter folder |
 | `s` | Global fuzzy search |
 | `/` | Filter current folder |
 | `o` | Cycle sort mode (manual → A-Z → created → visited) |
+| `Y` | Copy URL to clipboard |
+| `*` | Pin/unpin item (★ shown for pinned) |
+| `c` | Toggle delete confirmations |
 
 ### Editing
 
@@ -86,13 +98,14 @@ bm export ~/backup/bookmarks.html     # Export to custom path
 | `a` | Add bookmark |
 | `A` | Add folder |
 | `i` | AI quick add (requires ANTHROPIC_API_KEY) |
+| `L` | Quick add to Read Later (from clipboard) |
 | `e` | Edit selected item |
-| `t` | Edit tags |
-| `y` | Yank (copy) |
+| `t` | Edit tags (with autocomplete) |
+| `y` | Yank (copy to buffer) |
 | `d` | Delete |
-| `x` | Cut (delete + buffer) |
+| `x` | Cut (delete + copy to buffer) |
 | `p/P` | Paste after/before |
-| `M` | Move to different folder |
+| `m` | Move to different folder |
 
 ### Other
 
