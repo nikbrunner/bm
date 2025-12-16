@@ -26,6 +26,7 @@ import (
 
 // Package-level atomic counter for cull progress (bubbletea models are immutable)
 var cullProgressCounter int64
+var sortProgressCounter int64
 
 // CullCache represents the cached cull results for disk persistence.
 type CullCache struct {
@@ -71,6 +72,8 @@ const (
 	ModeCullLoading          // Checking URLs, show progress
 	ModeCullResults          // Group list view for cull results
 	ModeCullInspect          // Bookmark list within a cull group
+	ModeSortLoading          // Analyzing items for sort suggestions
+	ModeSortResults          // List of suggested moves
 )
 
 // hasTextInput returns true if the mode has an active text input where 'q' shouldn't quit.
@@ -205,6 +208,9 @@ type App struct {
 	// Cull state
 	cull CullState
 
+	// Sort state
+	sort SortState
+
 	// Settings
 	confirmDelete bool // true = ask confirmation before delete (default true)
 
@@ -264,6 +270,7 @@ func NewApp(params AppParams) App {
 		move:          NewMoveState(layoutCfg),
 		selection:     NewSelectionState(),
 		cull:          NewCullState(),
+		sort:          NewSortState(),
 		confirmDelete: true,
 		width:         80,
 		height:        24,
