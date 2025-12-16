@@ -32,6 +32,7 @@ go fmt ./...
 ./bm reset                    # Clear all data (requires confirmation)
 ./bm import bookmarks.html    # Import from browser HTML
 ./bm export                   # Export to browser HTML
+./bm cull                     # Check all URLs for dead links (report only)
 ```
 
 ## Architecture
@@ -42,6 +43,7 @@ go fmt ./...
 cmd/bm/main.go          # CLI entry point with subcommands (import/export/search/TUI)
 internal/
   ai/                   # Claude API for AI-powered bookmark analysis
+  culler/               # URL health checker for dead link detection
   model/                # Core data types (Bookmark, Folder, Store)
   storage/              # SQLite persistence (~/.config/bm/bookmarks.db)
   tui/                  # Bubbletea TUI (App model, View, Styles, Keys)
@@ -56,7 +58,7 @@ internal/
 **Store Pattern**: `model.Store` holds flat slices of `Folders` and `Bookmarks`. Parent/folder relationships are via `ParentID`/`FolderID` pointer fields (`nil` = root level).
 
 **TUI App Structure**: `tui.App` is the main bubbletea model with:
-- Modal modes: `ModeNormal`, `ModeAddBookmark`, `ModeEditFolder`, `ModeSearch`, `ModeHelp`, `ModeConfirmDelete`, `ModeQuickAdd`, `ModeQuickAddLoading`, `ModeQuickAddConfirm`, `ModeMove`, `ModeReadLaterLoading`
+- Modal modes: `ModeNormal`, `ModeAddBookmark`, `ModeEditFolder`, `ModeSearch`, `ModeHelp`, `ModeConfirmDelete`, `ModeQuickAdd`, `ModeQuickAddLoading`, `ModeQuickAddConfirm`, `ModeMove`, `ModeReadLaterLoading`, `ModeCullMenu`, `ModeCullLoading`, `ModeCullResults`, `ModeCullInspect`
 - Focus states: `PanePinned` (leftmost pinned items pane) and `PaneBrowser` (Miller columns)
 - Fuzzy search over all items (not just current folder) via `allItems`/`fuzzyMatches`
 - View renders 3-pane Miller columns (parent | current | preview), or 4-pane when pinned items exist in subfolders
@@ -66,9 +68,9 @@ internal/
 
 **Item Union Type**: `tui.Item` wraps either a `Folder` or `Bookmark` for unified list handling.
 
-**CLI Modes**: Subcommands are `help`, `init`, `reset`, `add`, `import`, `export`. Anything else is treated as a fuzzy search query. No args opens the full TUI.
+**CLI Modes**: Subcommands are `help`, `init`, `reset`, `add`, `import`, `export`, `cull`. Anything else is treated as a fuzzy search query. No args opens the full TUI.
 
-**Keybindings**: Single-key actions for editing (`y` yank, `d` delete, `x` cut), `gg` for top. `*` toggles pin/unpin on items. `m` moves items to a different folder. `h` at root switches to pinned pane, `l` returns to browser. `c` toggles delete confirmations (on by default). `?` shows help overlay. `l`/`Enter` opens bookmarks or enters folders. `i` triggers AI quick add, `L` adds to Read Later.
+**Keybindings**: Single-key actions for editing (`y` yank, `d` delete, `x` cut), `gg` for top. `*` toggles pin/unpin on items. `m` moves items to a different folder. `h` at root switches to pinned pane, `l` returns to browser. `c` toggles delete confirmations (on by default). `?` shows help overlay. `l`/`Enter` opens bookmarks or enters folders. `i` triggers AI quick add, `L` adds to Read Later. `C` opens dead link cull mode.
 
 ### Dependencies
 
@@ -90,4 +92,4 @@ The `internal/ai/` package provides Claude API integration for bookmark analysis
 
 ## Data Storage
 
-Bookmarks stored in SQLite database at `~/.config/bm/bookmarks.db`. Schema includes `folders` and `bookmarks` tables with UUID primary keys. Settings stored in `~/.config/bm/config.json`.
+Bookmarks stored in SQLite database at `~/.config/bm/bookmarks.db`. Schema includes `folders` and `bookmarks` tables with UUID primary keys. Settings stored in `~/.config/bm/config.json`. Cull results cached in `~/.config/bm/cull-cache.json`.

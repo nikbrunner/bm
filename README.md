@@ -5,9 +5,10 @@ A vim-style TUI bookmark manager for the terminal. Ranger/yazi-inspired with Mil
 ## Features
 
 - **Miller columns layout** - Parent | Current | Preview panes
-- **Pinned items** - Quick access to frequently used bookmarks/folders with `m` key
+- **Pinned items** - Quick access to frequently used bookmarks/folders with `*` key
 - **Vim keybindings** - `j/k`, `h/l`, `gg/G`, `y`, `d`, `x`, `p`
 - **Fuzzy search** - Global search across all bookmarks
+- **Dead link detection** - Find and manage broken bookmarks with `C`
 - **Browser integration** - Import/export standard HTML bookmark format
 - **SQLite storage** - Fast and reliable local database
 
@@ -57,6 +58,14 @@ bm export                             # Export to ~/Downloads/bookmarks-export-Y
 bm export ~/backup/bookmarks.html     # Export to custom path
 ```
 
+### Dead Link Detection
+
+```bash
+bm cull                               # Check all URLs and report dead/unreachable links
+```
+
+In the TUI, press `C` for interactive cull mode where you can inspect, delete, edit, or move problematic bookmarks. Results are cached so you can resume if you exit accidentally.
+
 ### AI Features
 
 If you set the `ANTHROPIC_API_KEY` environment variable, bm can use Claude to automatically generate titles and suggest tags for bookmarks:
@@ -90,6 +99,7 @@ In the TUI, press `i` for AI quick add or `L` to add from clipboard to Read Late
 | `Y` | Copy URL to clipboard |
 | `*` | Pin/unpin item (★ shown for pinned) |
 | `c` | Toggle delete confirmations |
+| `C` | Cull dead links (check all URLs) |
 
 ### Editing
 
