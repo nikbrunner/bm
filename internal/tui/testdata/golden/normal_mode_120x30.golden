@@ -27,4 +27,4 @@
   ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛  
                                                                                                                          
   [ord:man] [cfm:on]                                                                                                     
-  j/k:move h:back l:open s:search /:filter a:add e:edit d:del ?:help q:quit                                              
+  j/k:move h:back l:open s:search /:filter a:add e:edit d:del C:cull ?:help q:quit                                       

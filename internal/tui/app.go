@@ -7,17 +7,22 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/nikbrunner/bm/internal/ai"
+	"github.com/nikbrunner/bm/internal/culler"
 	"github.com/nikbrunner/bm/internal/model"
 	"github.com/nikbrunner/bm/internal/storage"
 	"github.com/nikbrunner/bm/internal/tui/layout"
 	"github.com/sahilm/fuzzy"
 )
+
+// Package-level atomic counter for cull progress (bubbletea models are immutable)
+var cullProgressCounter int64
 
 // aiResponseMsg is sent when the AI API call completes.
 type aiResponseMsg struct {
@@ -45,6 +50,9 @@ const (
 	ModeQuickAddCreateFolder // Create new folder during quick add
 	ModeReadLaterLoading     // Waiting for AI response for read later
 	ModeMove                 // Move item to different folder
+	ModeCullLoading          // Checking URLs, show progress
+	ModeCullResults          // Group list view for cull results
+	ModeCullInspect          // Bookmark list within a cull group
 )
 
 // SortMode represents the current sort mode.
@@ -88,6 +96,20 @@ type openURLErrorMsg struct {
 type clipboardErrorMsg struct {
 	err error
 }
+
+// cullProgressMsg is sent periodically during URL checking.
+type cullProgressMsg struct {
+	completed int
+	total     int
+}
+
+// cullCompleteMsg is sent when URL checking is complete.
+type cullCompleteMsg struct {
+	results []culler.Result
+}
+
+// cullTickMsg is sent periodically to update the progress display.
+type cullTickMsg struct{}
 
 // messageDuration is how long messages are displayed before auto-clearing.
 const messageDuration = 3 * time.Second
@@ -152,6 +174,9 @@ type App struct {
 	// Selection state (visual mode)
 	selection SelectionState
 
+	// Cull state
+	cull CullState
+
 	// Settings
 	confirmDelete bool // true = ask confirmation before delete (default true)
 
@@ -210,6 +235,7 @@ func NewApp(params AppParams) App {
 		quickAdd:      NewQuickAddState(layoutCfg),
 		move:          NewMoveState(layoutCfg),
 		selection:     NewSelectionState(),
+		cull:          NewCullState(),
 		confirmDelete: true,
 		width:         80,
 		height:        24,
@@ -588,6 +614,36 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Successfully copied to clipboard
 		cmd := a.setMessage(MessageSuccess, "URL copied to clipboard")
 		return a, cmd
+
+	case cullProgressMsg:
+		// Update progress during URL checking
+		a.cull.Progress = msg.completed
+		a.cull.Total = msg.total
+		return a, nil
+
+	case cullTickMsg:
+		// Periodic tick to update progress display during cull
+		if a.mode != ModeCullLoading {
+			return a, nil // Stop ticking if not in loading mode
+		}
+		a.cull.Progress = int(atomic.LoadInt64(&cullProgressCounter))
+		// Continue ticking
+		return a, cullTickCmd()
+
+	case cullCompleteMsg:
+		// URL checking is complete
+		a.cull.Results = msg.results
+		a.cull.Groups = a.groupCullResults(msg.results)
+		a.cull.GroupCursor = 0
+		a.cull.ItemCursor = 0
+		if len(a.cull.Groups) == 0 {
+			// No dead/unreachable links found
+			a.mode = ModeNormal
+			cmd := a.setMessage(MessageSuccess, "All bookmarks healthy!")
+			return a, cmd
+		}
+		a.mode = ModeCullResults
+		return a, nil
 
 	case aiResponseMsg:
 		// Handle AI response for quick add
@@ -1013,6 +1069,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Toggle help overlay
 			a.mode = ModeHelp
 			return a, nil
+
+		case key.Matches(msg, a.keys.Cull):
+			// Start URL cull check
+			a.cull.Reset()
+			a.cull.Total = len(a.store.Bookmarks)
+			a.mode = ModeCullLoading
+			return a, a.startCullCmd()
 		}
 	}
 
@@ -1257,6 +1320,121 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// '?' toggles help off
 			a.mode = ModeNormal
 			return a, nil
+		}
+		return a, nil
+	}
+
+	// Handle cull loading mode
+	if a.mode == ModeCullLoading {
+		// Only allow Esc to cancel
+		if msg.Type == tea.KeyEsc {
+			a.cull.Reset()
+			a.mode = ModeNormal
+			return a, nil
+		}
+		return a, nil
+	}
+
+	// Handle cull results mode (group list)
+	if a.mode == ModeCullResults {
+		switch msg.Type {
+		case tea.KeyEsc:
+			a.cull.Reset()
+			a.mode = ModeNormal
+			return a, nil
+		case tea.KeyEnter:
+			// Enter inspect mode for selected group
+			if len(a.cull.Groups) > 0 {
+				a.cull.ItemCursor = 0
+				a.mode = ModeCullInspect
+			}
+			return a, nil
+		case tea.KeyDown:
+			if len(a.cull.Groups) > 0 && a.cull.GroupCursor < len(a.cull.Groups)-1 {
+				a.cull.GroupCursor++
+			}
+			return a, nil
+		case tea.KeyUp:
+			if a.cull.GroupCursor > 0 {
+				a.cull.GroupCursor--
+			}
+			return a, nil
+		}
+		// Handle vim-style navigation and commands
+		if msg.Type == tea.KeyRunes {
+			switch string(msg.Runes) {
+			case "j":
+				if len(a.cull.Groups) > 0 && a.cull.GroupCursor < len(a.cull.Groups)-1 {
+					a.cull.GroupCursor++
+				}
+				return a, nil
+			case "k":
+				if a.cull.GroupCursor > 0 {
+					a.cull.GroupCursor--
+				}
+				return a, nil
+			case "d":
+				// Delete all in selected group
+				return a.cullDeleteGroup()
+			case "q":
+				a.cull.Reset()
+				a.mode = ModeNormal
+				return a, nil
+			}
+		}
+		return a, nil
+	}
+
+	// Handle cull inspect mode (bookmark list within group)
+	if a.mode == ModeCullInspect {
+		group := a.cull.CurrentGroup()
+		if group == nil {
+			a.mode = ModeCullResults
+			return a, nil
+		}
+
+		switch msg.Type {
+		case tea.KeyEsc:
+			// Back to group list
+			a.mode = ModeCullResults
+			return a, nil
+		case tea.KeyDown:
+			if len(group.Results) > 0 && a.cull.ItemCursor < len(group.Results)-1 {
+				a.cull.ItemCursor++
+			}
+			return a, nil
+		case tea.KeyUp:
+			if a.cull.ItemCursor > 0 {
+				a.cull.ItemCursor--
+			}
+			return a, nil
+		}
+		// Handle vim-style navigation and commands
+		if msg.Type == tea.KeyRunes {
+			switch string(msg.Runes) {
+			case "j":
+				if len(group.Results) > 0 && a.cull.ItemCursor < len(group.Results)-1 {
+					a.cull.ItemCursor++
+				}
+				return a, nil
+			case "k":
+				if a.cull.ItemCursor > 0 {
+					a.cull.ItemCursor--
+				}
+				return a, nil
+			case "d":
+				// Delete current item
+				return a.cullDeleteItem()
+			case "o":
+				// Open in browser
+				return a.cullOpenItem()
+			case "e":
+				// Edit bookmark
+				return a.cullEditItem()
+			case "m":
+				// Move bookmark
+				return a.cullMoveItem()
+			}
 		}
 		return a, nil
 	}
@@ -2559,4 +2737,235 @@ func (a *App) callAICmd(url string) tea.Cmd {
 		response, err := client.SuggestBookmark(url, context)
 		return aiResponseMsg{response: response, err: err}
 	}
+}
+
+// startCullCmd returns a tea.Cmd that starts the URL cull check.
+func (a *App) startCullCmd() tea.Cmd {
+	bookmarks := make([]model.Bookmark, len(a.store.Bookmarks))
+	copy(bookmarks, a.store.Bookmarks)
+
+	excludeDomains := a.config.CullExcludeDomains
+
+	// Reset the atomic progress counter
+	atomic.StoreInt64(&cullProgressCounter, 0)
+
+	// Start both the cull operation and the ticker
+	return tea.Batch(
+		// Cull operation
+		func() tea.Msg {
+			onProgress := func(completed, total int) {
+				atomic.StoreInt64(&cullProgressCounter, int64(completed))
+			}
+			results := culler.CheckURLs(bookmarks, 10, 10*time.Second, excludeDomains, onProgress)
+			return cullCompleteMsg{results: results}
+		},
+		// Start the ticker to update UI
+		cullTickCmd(),
+	)
+}
+
+// cullTickCmd returns a command that ticks every 100ms to update progress.
+func cullTickCmd() tea.Cmd {
+	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
+		return cullTickMsg{}
+	})
+}
+
+// groupCullResults groups cull results by status and error type.
+func (a *App) groupCullResults(results []culler.Result) []CullGroup {
+	// Map to collect results by group key
+	groupMap := make(map[string]*CullGroup)
+
+	for _, r := range results {
+		if r.Status == culler.Healthy {
+			continue // Skip healthy items
+		}
+
+		var key, label, desc string
+
+		switch r.Status {
+		case culler.Dead:
+			key = "dead"
+			label = "DEAD"
+			desc = "404/410 responses"
+		case culler.Unreachable:
+			// Group by error type
+			key = "unreachable:" + r.Error
+			label = r.Error
+			desc = "Could not reach"
+		}
+
+		group, exists := groupMap[key]
+		if !exists {
+			group = &CullGroup{
+				Label:       label,
+				Description: desc,
+				Status:      r.Status,
+				Error:       r.Error,
+				Results:     []culler.Result{},
+			}
+			groupMap[key] = group
+		}
+		group.Results = append(group.Results, r)
+	}
+
+	// Convert map to slice and sort (DEAD first, then by count)
+	groups := make([]CullGroup, 0, len(groupMap))
+	for _, g := range groupMap {
+		groups = append(groups, *g)
+	}
+
+	sort.Slice(groups, func(i, j int) bool {
+		// DEAD first
+		if groups[i].Status == culler.Dead && groups[j].Status != culler.Dead {
+			return true
+		}
+		if groups[i].Status != culler.Dead && groups[j].Status == culler.Dead {
+			return false
+		}
+		// Then by count (descending)
+		return len(groups[i].Results) > len(groups[j].Results)
+	})
+
+	return groups
+}
+
+// cullDeleteGroup deletes all bookmarks in the current cull group.
+func (a *App) cullDeleteGroup() (tea.Model, tea.Cmd) {
+	group := a.cull.CurrentGroup()
+	if group == nil {
+		return a, nil
+	}
+
+	count := 0
+	for _, r := range group.Results {
+		a.store.RemoveBookmarkByID(r.Bookmark.ID)
+		count++
+	}
+
+	a.refreshItems()
+	a.refreshPinnedItems()
+
+	// Remove the group from the list
+	if len(a.cull.Groups) > 0 {
+		idx := a.cull.GroupCursor
+		a.cull.Groups = append(a.cull.Groups[:idx], a.cull.Groups[idx+1:]...)
+	}
+
+	// Adjust cursor if needed
+	if a.cull.GroupCursor >= len(a.cull.Groups) && a.cull.GroupCursor > 0 {
+		a.cull.GroupCursor--
+	}
+
+	// If no more groups, return to normal mode
+	if len(a.cull.Groups) == 0 {
+		a.cull.Reset()
+		a.mode = ModeNormal
+		cmd := a.setMessage(MessageSuccess, "Deleted "+strconv.Itoa(count)+" bookmarks. Cull complete!")
+		return a, cmd
+	}
+
+	cmd := a.setMessage(MessageSuccess, "Deleted "+strconv.Itoa(count)+" bookmarks")
+	return a, cmd
+}
+
+// cullDeleteItem deletes the current bookmark in cull inspect mode.
+func (a *App) cullDeleteItem() (tea.Model, tea.Cmd) {
+	group := a.cull.CurrentGroup()
+	result := a.cull.CurrentItem()
+	if group == nil || result == nil {
+		return a, nil
+	}
+
+	title := result.Bookmark.Title
+	a.store.RemoveBookmarkByID(result.Bookmark.ID)
+	a.refreshItems()
+	a.refreshPinnedItems()
+
+	// Remove from group results
+	idx := a.cull.ItemCursor
+	group.Results = append(group.Results[:idx], group.Results[idx+1:]...)
+
+	// Adjust cursor
+	if a.cull.ItemCursor >= len(group.Results) && a.cull.ItemCursor > 0 {
+		a.cull.ItemCursor--
+	}
+
+	// If group is empty, remove it and go back to results
+	if len(group.Results) == 0 {
+		groupIdx := a.cull.GroupCursor
+		a.cull.Groups = append(a.cull.Groups[:groupIdx], a.cull.Groups[groupIdx+1:]...)
+
+		if a.cull.GroupCursor >= len(a.cull.Groups) && a.cull.GroupCursor > 0 {
+			a.cull.GroupCursor--
+		}
+
+		if len(a.cull.Groups) == 0 {
+			a.cull.Reset()
+			a.mode = ModeNormal
+			cmd := a.setMessage(MessageSuccess, "Deleted: "+title+". Cull complete!")
+			return a, cmd
+		}
+
+		a.mode = ModeCullResults
+	}
+
+	cmd := a.setMessage(MessageSuccess, "Deleted: "+title)
+	return a, cmd
+}
+
+// cullOpenItem opens the current bookmark URL in the browser.
+func (a *App) cullOpenItem() (tea.Model, tea.Cmd) {
+	result := a.cull.CurrentItem()
+	if result == nil {
+		return a, nil
+	}
+	return a, openURLCmd(result.Bookmark.URL)
+}
+
+// cullEditItem switches to edit mode for the current cull item.
+func (a *App) cullEditItem() (tea.Model, tea.Cmd) {
+	result := a.cull.CurrentItem()
+	if result == nil {
+		return a, nil
+	}
+
+	a.mode = ModeEditBookmark
+	a.modal.EditItemID = result.Bookmark.ID
+	a.modal.TitleInput.Reset()
+	a.modal.TitleInput.SetValue(result.Bookmark.Title)
+	a.modal.URLInput.Reset()
+	a.modal.URLInput.SetValue(result.Bookmark.URL)
+	a.modal.TitleInput.Focus()
+	return a, a.modal.TitleInput.Focus()
+}
+
+// cullMoveItem switches to move mode for the current cull item.
+func (a *App) cullMoveItem() (tea.Model, tea.Cmd) {
+	result := a.cull.CurrentItem()
+	if result == nil {
+		return a, nil
+	}
+
+	// Create item wrapper for the bookmark
+	item := Item{
+		Kind:     ItemBookmark,
+		Bookmark: result.Bookmark,
+	}
+
+	a.move.ItemsToMove = []Item{item}
+	a.mode = ModeMove
+	a.move.Folders = a.buildFolderPaths()
+	a.move.FilteredFolders = a.move.Folders
+	a.move.FilterInput.Reset()
+	a.move.FilterInput.Focus()
+
+	// Find current location
+	currentPath := "/"
+	if result.Bookmark.FolderID != nil {
+		currentPath = a.store.GetFolderPath(result.Bookmark.FolderID)
+	}
+	a.move.FolderIdx = a.findMoveFolderIndex(currentPath)
+
+	return a, a.move.FilterInput.Focus()
 }

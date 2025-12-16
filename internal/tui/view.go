@@ -305,6 +305,15 @@ func (a App) renderModal() string {
 	case ModeQuickAddCreateFolder:
 		return a.renderQuickAddCreateFolder()
 
+	case ModeCullLoading:
+		return a.renderCullLoading()
+
+	case ModeCullResults:
+		return a.renderCullResults()
+
+	case ModeCullInspect:
+		return a.renderCullInspect()
+
 	case ModeMove:
 		// Get item being moved
 		displayItems := a.getDisplayItems()
@@ -994,6 +1003,9 @@ func (a App) renderHelpOverlay() string {
 	right.WriteString("V    visual mode\n")
 	right.WriteString("Esc  clear select\n")
 	right.WriteString("\n")
+	right.WriteString(a.styles.Title.Render("tools") + "\n")
+	right.WriteString("C    cull dead links\n")
+	right.WriteString("\n")
 	right.WriteString(a.styles.Help.Render("[?/q/esc] close"))
 
 	// Join columns
@@ -1009,6 +1021,190 @@ func (a App) renderHelpOverlay() string {
 		lipgloss.Top,
 		modalStyle.Render(cols),
 	)
+}
+
+// renderCullLoading renders the loading screen during URL checking.
+func (a App) renderCullLoading() string {
+	modalWidth := layout.CalculateModalWidth(a.width, a.layoutConfig.Modal.DefaultWidthPercent, a.layoutConfig.Modal)
+
+	accent := lipgloss.AdaptiveColor{Light: "#4A7070", Dark: "#5F8787"}
+	modalStyle := lipgloss.NewStyle().
+		Border(lipgloss.ThickBorder()).
+		BorderForeground(accent).
+		Padding(1, 2).
+		Width(modalWidth)
+
+	var content strings.Builder
+	content.WriteString(a.styles.Title.Render("Cull Dead Links"))
+	content.WriteString("\n\n")
+	content.WriteString(fmt.Sprintf("Checking %d bookmarks...\n\n", a.cull.Total))
+
+	// Progress bar
+	if a.cull.Total > 0 {
+		progress := float64(a.cull.Progress) / float64(a.cull.Total)
+		barWidth := modalWidth - 10
+		filled := int(progress * float64(barWidth))
+		empty := barWidth - filled
+
+		bar := strings.Repeat("█", filled) + strings.Repeat("░", empty)
+		content.WriteString(bar + "\n\n")
+		content.WriteString(fmt.Sprintf("[%d/%d]", a.cull.Progress, a.cull.Total))
+	}
+
+	content.WriteString("\n\n")
+	content.WriteString(a.styles.Help.Render("Press Esc to cancel"))
+
+	modal := lipgloss.Place(
+		a.width,
+		a.height-3,
+		lipgloss.Center,
+		lipgloss.Center,
+		modalStyle.Render(content.String()),
+	)
+
+	return lipgloss.JoinVertical(lipgloss.Left, modal, a.renderHelpBar())
+}
+
+// renderCullResults renders the group list after URL checking.
+func (a App) renderCullResults() string {
+	modalWidth := layout.CalculateModalWidth(a.width, a.layoutConfig.Modal.LargeWidthPercent, a.layoutConfig.Modal)
+
+	accent := lipgloss.AdaptiveColor{Light: "#4A7070", Dark: "#5F8787"}
+	modalStyle := lipgloss.NewStyle().
+		Border(lipgloss.ThickBorder()).
+		BorderForeground(accent).
+		Padding(1, 2).
+		Width(modalWidth)
+
+	var content strings.Builder
+	content.WriteString(a.styles.Title.Render("Cull Results"))
+	content.WriteString("\n\n")
+
+	if len(a.cull.Groups) == 0 {
+		content.WriteString(a.styles.Empty.Render("All bookmarks healthy!"))
+	} else {
+		// Count totals
+		totalDead := 0
+		totalUnreachable := 0
+		for _, g := range a.cull.Groups {
+			if g.Label == "DEAD" {
+				totalDead += len(g.Results)
+			} else {
+				totalUnreachable += len(g.Results)
+			}
+		}
+
+		// Summary line
+		summary := fmt.Sprintf("Found %d dead, %d unreachable", totalDead, totalUnreachable)
+		content.WriteString(a.styles.Help.Render(summary))
+		content.WriteString("\n\n")
+
+		// Group list
+		maxVisible := 10
+		start, end := layout.CalculateVisibleListItems(maxVisible, a.cull.GroupCursor, len(a.cull.Groups))
+
+		for i := start; i < end; i++ {
+			group := a.cull.Groups[i]
+			line := fmt.Sprintf("%s (%d)", group.Label, len(group.Results))
+
+			if i == a.cull.GroupCursor {
+				// Pad for selection highlight
+				padded := line
+				for len(padded) < modalWidth-8 {
+					padded += " "
+				}
+				content.WriteString(a.styles.ItemSelected.Render("▸ " + padded))
+			} else {
+				content.WriteString("  " + line)
+			}
+			content.WriteString("\n")
+		}
+	}
+
+	content.WriteString("\n")
+	content.WriteString(a.styles.Help.Render("j/k navigate  Enter inspect  d delete all  q/Esc quit"))
+
+	modal := lipgloss.Place(
+		a.width,
+		a.height-3,
+		lipgloss.Center,
+		lipgloss.Center,
+		modalStyle.Render(content.String()),
+	)
+
+	return lipgloss.JoinVertical(lipgloss.Left, modal, a.renderHelpBar())
+}
+
+// renderCullInspect renders the bookmark list within a cull group.
+func (a App) renderCullInspect() string {
+	modalWidth := layout.CalculateModalWidth(a.width, a.layoutConfig.Modal.LargeWidthPercent, a.layoutConfig.Modal)
+
+	accent := lipgloss.AdaptiveColor{Light: "#4A7070", Dark: "#5F8787"}
+	modalStyle := lipgloss.NewStyle().
+		Border(lipgloss.ThickBorder()).
+		BorderForeground(accent).
+		Padding(1, 2).
+		Width(modalWidth)
+
+	var content strings.Builder
+
+	group := a.cull.CurrentGroup()
+	if group == nil {
+		content.WriteString(a.styles.Empty.Render("No group selected"))
+	} else {
+		// Title with count
+		title := fmt.Sprintf("%s (%d)", group.Label, len(group.Results))
+		content.WriteString(a.styles.Title.Render(title))
+		content.WriteString("\n\n")
+
+		// Bookmark list - compact view
+		maxVisible := 12
+		itemWidth := modalWidth - 6
+
+		start, end := layout.CalculateVisibleListItems(maxVisible, a.cull.ItemCursor, len(group.Results))
+
+		for i := start; i < end; i++ {
+			r := group.Results[i]
+			isSelected := i == a.cull.ItemCursor
+
+			// Title (truncated)
+			titleLine := r.Bookmark.Title
+			if len(titleLine) > itemWidth-2 {
+				titleLine = titleLine[:itemWidth-5] + "..."
+			}
+
+			// URL (truncated, shorter)
+			urlLine := r.Bookmark.URL
+			maxURLLen := itemWidth - 4
+			if len(urlLine) > maxURLLen {
+				urlLine = urlLine[:maxURLLen-3] + "..."
+			}
+
+			if isSelected {
+				content.WriteString(a.styles.ItemSelected.Render("▸ " + titleLine))
+				content.WriteString("\n")
+				content.WriteString(a.styles.URL.Render("  " + urlLine))
+				content.WriteString("\n")
+			} else {
+				content.WriteString("  " + titleLine)
+				content.WriteString("\n")
+				content.WriteString(a.styles.Empty.Render("  " + urlLine))
+				content.WriteString("\n")
+			}
+		}
+	}
+
+	content.WriteString(a.styles.Help.Render("j/k navigate  d delete  o open  e edit  m move  Esc back"))
+
+	modal := lipgloss.Place(
+		a.width,
+		a.height-3,
+		lipgloss.Center,
+		lipgloss.Center,
+		modalStyle.Render(content.String()),
+	)
+
+	return lipgloss.JoinVertical(lipgloss.Left, modal, a.renderHelpBar())
 }
 
 func (a App) getItemsForFolder(folderID *string) []Item {

@@ -95,6 +95,12 @@ func (a App) getContextualHints() HintSet {
 		return HintSet{
 			System: []Hint{{Key: "?/q/Esc", Desc: "close"}},
 		}
+	case ModeCullLoading:
+		return a.getCullLoadingHints()
+	case ModeCullResults:
+		return a.getCullResultsHints()
+	case ModeCullInspect:
+		return a.getCullInspectHints()
 	default:
 		return HintSet{}
 	}
@@ -118,6 +124,7 @@ func (a App) getNormalModeHints() HintSet {
 			{Key: "d", Desc: "del"},
 		},
 		System: []Hint{
+			{Key: "C", Desc: "cull"},
 			{Key: "?", Desc: "help"},
 			{Key: "q", Desc: "quit"},
 		},
@@ -293,6 +300,49 @@ func (a App) getReadLaterLoadingHints() HintSet {
 	return HintSet{
 		System: []Hint{
 			{Key: "", Desc: "adding..."},
+		},
+	}
+}
+
+// getCullLoadingHints returns hints for ModeCullLoading.
+func (a App) getCullLoadingHints() HintSet {
+	return HintSet{
+		System: []Hint{
+			{Key: "Esc", Desc: "cancel"},
+		},
+	}
+}
+
+// getCullResultsHints returns hints for ModeCullResults.
+func (a App) getCullResultsHints() HintSet {
+	return HintSet{
+		Nav: []Hint{
+			{Key: "j/k", Desc: "move"},
+		},
+		Action: []Hint{
+			{Key: "Enter", Desc: "inspect"},
+			{Key: "d", Desc: "del all"},
+		},
+		System: []Hint{
+			{Key: "q/Esc", Desc: "quit"},
+		},
+	}
+}
+
+// getCullInspectHints returns hints for ModeCullInspect.
+func (a App) getCullInspectHints() HintSet {
+	return HintSet{
+		Nav: []Hint{
+			{Key: "j/k", Desc: "move"},
+		},
+		Action: []Hint{
+			{Key: "d", Desc: "del"},
+			{Key: "o", Desc: "open"},
+			{Key: "e", Desc: "edit"},
+			{Key: "m", Desc: "move"},
+		},
+		System: []Hint{
+			{Key: "Esc", Desc: "back"},
 		},
 	}
 }

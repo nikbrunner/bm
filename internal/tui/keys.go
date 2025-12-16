@@ -31,6 +31,7 @@ type KeyMap struct {
 	Select        key.Binding
 	SelectVisual  key.Binding
 	ClearSelect   key.Binding
+	Cull          key.Binding
 	Help          key.Binding
 	Quit          key.Binding
 }
@@ -145,6 +146,10 @@ func DefaultKeyMap() KeyMap {
 		ClearSelect: key.NewBinding(
 			key.WithKeys("esc"),
 			key.WithHelp("Esc", "clear select"),
+		),
+		Cull: key.NewBinding(
+			key.WithKeys("C"),
+			key.WithHelp("C", "cull dead links"),
 		),
 		Help: key.NewBinding(
 			key.WithKeys("?"),

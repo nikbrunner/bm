@@ -53,8 +53,7 @@ func main() {
 			runExport(outputPath)
 			return
 		case "cull":
-			deleteFlag := len(os.Args) >= 3 && os.Args[2] == "--delete"
-			runCull(deleteFlag)
+			runCull()
 			return
 		default:
 			// Treat as search query (join all remaining args)
@@ -80,7 +79,6 @@ Usage:
   bm import <file>      Import bookmarks from HTML
   bm export [path]      Export bookmarks to HTML
   bm cull               Check all URLs, report dead links
-  bm cull --delete      Check all URLs, delete dead links
   bm help               Show this help
 
 Quick Add Options:
@@ -116,6 +114,7 @@ TUI Keybindings:
     p/P         Paste after/before
 
   Other:
+    C           Cull dead links (interactive)
     ?           Show help overlay
     q           Quit
 
@@ -292,8 +291,8 @@ func runExport(outputPath string) {
 }
 
 // runCull checks all bookmark URLs and reports/deletes dead ones.
-func runCull(deleteFlag bool) {
-	store, dataStorage, closeStorage := loadStorage()
+func runCull() {
+	store, _, closeStorage := loadStorage()
 	defer closeStorage()
 
 	// Load config for excluded domains
@@ -363,20 +362,7 @@ func runCull(deleteFlag bool) {
 
 	healthy := len(store.Bookmarks) - len(dead) - len(unreachable)
 	fmt.Printf("\nSummary: %d healthy, %d dead, %d unreachable\n", healthy, len(dead), len(unreachable))
-
-	// Delete if requested
-	if deleteFlag && len(dead) > 0 {
-		for _, r := range dead {
-			store.RemoveBookmarkByID(r.Bookmark.ID)
-		}
-		if err := dataStorage.Save(store); err != nil {
-			fmt.Fprintf(os.Stderr, "Error saving: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Printf("\nDeleted %d dead bookmarks.\n", len(dead))
-	} else if deleteFlag && len(dead) == 0 {
-		fmt.Println("\nNo dead bookmarks to delete.")
-	}
+	fmt.Println("\nUse 'C' in TUI for interactive cull mode.")
 }
 
 // runAdd handles the quick add command.

@@ -3,6 +3,7 @@ package tui
 import (
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/nikbrunner/bm/internal/ai"
+	"github.com/nikbrunner/bm/internal/culler"
 	"github.com/nikbrunner/bm/internal/tui/layout"
 )
 
@@ -258,4 +259,55 @@ func (b *BrowserNav) ResetToRoot() {
 	b.CurrentFolderID = nil
 	b.FolderStack = []string{}
 	b.Cursor = 0
+}
+
+// CullState holds state for the URL cull feature.
+type CullState struct {
+	Results     []culler.Result // Raw results from URL check
+	Groups      []CullGroup     // Grouped by status/error type
+	GroupCursor int             // Selected group index
+	ItemCursor  int             // Selected bookmark in group
+	Progress    int             // Progress counter for loading
+	Total       int             // Total bookmarks being checked
+}
+
+// CullGroup represents a group of cull results (defined here for state package access).
+type CullGroup struct {
+	Label       string          // "DEAD", "DNS failure", etc.
+	Description string          // "404/410 responses", etc.
+	Status      culler.Status   // For categorization
+	Error       string          // Error type for unreachable
+	Results     []culler.Result // Bookmarks in this group
+}
+
+// NewCullState creates an empty CullState.
+func NewCullState() CullState {
+	return CullState{}
+}
+
+// Reset clears all cull state.
+func (c *CullState) Reset() {
+	c.Results = nil
+	c.Groups = nil
+	c.GroupCursor = 0
+	c.ItemCursor = 0
+	c.Progress = 0
+	c.Total = 0
+}
+
+// CurrentGroup returns the currently selected group, or nil if none.
+func (c *CullState) CurrentGroup() *CullGroup {
+	if len(c.Groups) == 0 || c.GroupCursor >= len(c.Groups) {
+		return nil
+	}
+	return &c.Groups[c.GroupCursor]
+}
+
+// CurrentItem returns the currently selected item in the current group, or nil if none.
+func (c *CullState) CurrentItem() *culler.Result {
+	group := c.CurrentGroup()
+	if group == nil || len(group.Results) == 0 || c.ItemCursor >= len(group.Results) {
+		return nil
+	}
+	return &group.Results[c.ItemCursor]
 }
