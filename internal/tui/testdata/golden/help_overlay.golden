@@ -4,20 +4,20 @@
   h/l  back/fwd       A    add folder                                           
   gg   top            i    AI add                                               
   G    bottom         L    read later                                           
-                      e    edit                                                 
-  act                 t    tags                                                 
-  l    open url       y    yank                                                 
-  Y    yank url       d    delete                                               
-  *    pin/unpin      x    cut                                                  
-  s    search         p/P  paste                                                
-  /    filter         c    confirm toggle                                       
+  0    go to pins     e    edit                                                 
+                      t    tags                                                 
+  pins                y    yank                                                 
+  1-9  open pin       d    delete                                               
+  J/K  reorder        x    cut                                                  
+                      p/P  paste                                                
+  act                 c    confirm toggle                                       
+  l    open url                                                                 
+  Y    yank url       select                                                    
+  *    pin/unpin      v    select item                                          
+  s    search         V    visual mode                                          
+  /    filter         Esc  clear select                                         
   o    sort                                                                     
-  m    move           select                                                    
-                      v    select item                                          
-                      V    visual mode                                          
-                      Esc  clear select                                         
-                                                                                
-                      tools                                                     
+  m    move           tools                                                     
                       C    cull dead links                                      
                                                                                 
                                                                                 

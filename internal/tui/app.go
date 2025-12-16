@@ -787,7 +787,15 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, a.keys.Help):
 			a.mode = ModeHelp
 			return a, nil
+		}
 
+		// Handle 0 key globally - jump to pinned pane
+		if msg.String() == "0" && len(a.pinnedItems) > 0 {
+			a.focusedPane = PanePinned
+			return a, nil
+		}
+
+		switch {
 		case key.Matches(msg, a.keys.Search):
 			// Open fuzzy finder mode with GLOBAL search
 			a.mode = ModeSearch
