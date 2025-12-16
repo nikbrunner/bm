@@ -1004,13 +1004,36 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 
-		// Handle Esc - clear selection if any
+		// Handle Esc - clear selection, or navigate back in browser pane
 		if key.Matches(msg, a.keys.ClearSelect) {
+			a.lastKeyWasG = false
+			// First priority: clear selection if any
 			if a.selection.HasSelection() {
-				a.lastKeyWasG = false
 				a.clearSelection()
 				return a, nil
 			}
+			// Second priority: navigate back in browser pane
+			if a.focusedPane == PaneBrowser {
+				if a.browser.CurrentFolderID == nil {
+					// At root: switch to pinned pane
+					a.focusedPane = PanePinned
+					return a, nil
+				}
+				// Go back to parent folder
+				if len(a.browser.FolderStack) > 0 {
+					lastIdx := len(a.browser.FolderStack) - 1
+					parentID := a.browser.FolderStack[lastIdx]
+					a.browser.FolderStack = a.browser.FolderStack[:lastIdx]
+					a.browser.CurrentFolderID = &parentID
+				} else {
+					a.browser.CurrentFolderID = nil
+				}
+				a.browser.Cursor = 0
+				a.refreshItems()
+				return a, nil
+			}
+			// In pinned pane: do nothing
+			return a, nil
 		}
 
 		// Reset sequence flags for any other key
