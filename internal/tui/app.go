@@ -1,8 +1,11 @@
 package tui
 
 import (
+	"encoding/json"
 	"net/url"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strconv"
@@ -23,6 +26,20 @@ import (
 
 // Package-level atomic counter for cull progress (bubbletea models are immutable)
 var cullProgressCounter int64
+
+// CullCache represents the cached cull results for disk persistence.
+type CullCache struct {
+	Timestamp time.Time         `json:"timestamp"`
+	Results   []CullCacheResult `json:"results"`
+}
+
+// CullCacheResult is a serializable version of culler.Result.
+type CullCacheResult struct {
+	BookmarkID string `json:"bookmarkId"`
+	Status     int    `json:"status"` // culler.Status as int
+	StatusCode int    `json:"statusCode"`
+	Error      string `json:"error"`
+}
 
 // aiResponseMsg is sent when the AI API call completes.
 type aiResponseMsg struct {
@@ -50,6 +67,7 @@ const (
 	ModeQuickAddCreateFolder // Create new folder during quick add
 	ModeReadLaterLoading     // Waiting for AI response for read later
 	ModeMove                 // Move item to different folder
+	ModeCullMenu             // Menu to choose fresh vs cached cull
 	ModeCullLoading          // Checking URLs, show progress
 	ModeCullResults          // Group list view for cull results
 	ModeCullInspect          // Bookmark list within a cull group
@@ -631,7 +649,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, cullTickCmd()
 
 	case cullCompleteMsg:
-		// URL checking is complete
+		// URL checking is complete - save cache
+		_ = a.saveCullCache(msg.results)
+		a.cull.HasCache = true
+		a.cull.CacheTime = time.Now()
+
 		a.cull.Results = msg.results
 		a.cull.Groups = a.groupCullResults(msg.results)
 		a.cull.GroupCursor = 0
@@ -1071,7 +1093,15 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 
 		case key.Matches(msg, a.keys.Cull):
-			// Start URL cull check
+			// Check if cache exists
+			a.checkCullCache()
+			if a.cull.HasCache {
+				// Show menu to choose fresh vs cached
+				a.cull.MenuCursor = 0
+				a.mode = ModeCullMenu
+				return a, nil
+			}
+			// No cache - go directly to loading
 			a.cull.Reset()
 			a.cull.Total = len(a.store.Bookmarks)
 			a.mode = ModeCullLoading
@@ -1320,6 +1350,63 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// '?' toggles help off
 			a.mode = ModeNormal
 			return a, nil
+		}
+		return a, nil
+	}
+
+	// Handle cull menu mode (fresh vs cached)
+	if a.mode == ModeCullMenu {
+		switch msg.Type {
+		case tea.KeyEsc:
+			a.mode = ModeNormal
+			return a, nil
+		case tea.KeyEnter:
+			if a.cull.MenuCursor == 0 {
+				// Fresh check
+				a.cull.Reset()
+				a.cull.Total = len(a.store.Bookmarks)
+				a.mode = ModeCullLoading
+				return a, a.startCullCmd()
+			} else {
+				// Use cached results
+				results, _, err := a.loadCullCache()
+				if err != nil {
+					a.setMessage(MessageError, "Cache load failed: "+err.Error())
+					a.mode = ModeNormal
+					return a, nil
+				}
+				a.cull.Results = results
+				a.cull.Groups = a.groupCullResults(results)
+				a.cull.GroupCursor = 0
+				a.cull.ItemCursor = 0
+				a.mode = ModeCullResults
+			}
+			return a, nil
+		case tea.KeyDown:
+			if a.cull.MenuCursor < 1 {
+				a.cull.MenuCursor++
+			}
+			return a, nil
+		case tea.KeyUp:
+			if a.cull.MenuCursor > 0 {
+				a.cull.MenuCursor--
+			}
+			return a, nil
+		}
+		// Handle vim-style navigation
+		if msg.Type == tea.KeyRunes {
+			switch string(msg.Runes) {
+			case "j":
+				if a.cull.MenuCursor < 1 {
+					a.cull.MenuCursor++
+				}
+				return a, nil
+			case "k":
+				if a.cull.MenuCursor > 0 {
+					a.cull.MenuCursor--
+				}
+				return a, nil
+			}
 		}
 		return a, nil
 	}
@@ -2769,6 +2856,117 @@ func cullTickCmd() tea.Cmd {
 	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
 		return cullTickMsg{}
 	})
+}
+
+// cullCachePath returns the path to the cull cache file.
+func cullCachePath() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(homeDir, ".config", "bm", "cull-cache.json"), nil
+}
+
+// saveCullCache saves cull results to disk.
+func (a *App) saveCullCache(results []culler.Result) error {
+	path, err := cullCachePath()
+	if err != nil {
+		return err
+	}
+
+	// Convert to serializable format
+	cacheResults := make([]CullCacheResult, 0, len(results))
+	for _, r := range results {
+		if r.Status == culler.Healthy {
+			continue // Only cache problematic results
+		}
+		cacheResults = append(cacheResults, CullCacheResult{
+			BookmarkID: r.Bookmark.ID,
+			Status:     int(r.Status),
+			StatusCode: r.StatusCode,
+			Error:      r.Error,
+		})
+	}
+
+	cache := CullCache{
+		Timestamp: time.Now(),
+		Results:   cacheResults,
+	}
+
+	data, err := json.MarshalIndent(cache, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(path, data, 0644)
+}
+
+// loadCullCache loads cull results from disk and matches with current bookmarks.
+func (a *App) loadCullCache() ([]culler.Result, time.Time, error) {
+	path, err := cullCachePath()
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+
+	var cache CullCache
+	if err := json.Unmarshal(data, &cache); err != nil {
+		return nil, time.Time{}, err
+	}
+
+	// Build bookmark ID map for fast lookup
+	bookmarkMap := make(map[string]*model.Bookmark)
+	for i := range a.store.Bookmarks {
+		bookmarkMap[a.store.Bookmarks[i].ID] = &a.store.Bookmarks[i]
+	}
+
+	// Convert back to culler.Result, skipping missing bookmarks
+	results := make([]culler.Result, 0, len(cache.Results))
+	for _, cr := range cache.Results {
+		bookmark, exists := bookmarkMap[cr.BookmarkID]
+		if !exists {
+			continue // Bookmark was deleted
+		}
+		results = append(results, culler.Result{
+			Bookmark:   bookmark,
+			Status:     culler.Status(cr.Status),
+			StatusCode: cr.StatusCode,
+			Error:      cr.Error,
+		})
+	}
+
+	return results, cache.Timestamp, nil
+}
+
+// checkCullCache checks if a cache file exists and updates state.
+func (a *App) checkCullCache() {
+	path, err := cullCachePath()
+	if err != nil {
+		a.cull.HasCache = false
+		return
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		a.cull.HasCache = false
+		return
+	}
+
+	a.cull.HasCache = true
+	a.cull.CacheTime = info.ModTime()
+}
+
+// countCachedProblems returns the count of problematic bookmarks in cache.
+func (a *App) countCachedProblems() int {
+	results, _, err := a.loadCullCache()
+	if err != nil {
+		return 0
+	}
+	return len(results)
 }
 
 // groupCullResults groups cull results by status and error type.

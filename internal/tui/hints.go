@@ -95,6 +95,8 @@ func (a App) getContextualHints() HintSet {
 		return HintSet{
 			System: []Hint{{Key: "?/q/Esc", Desc: "close"}},
 		}
+	case ModeCullMenu:
+		return a.getCullMenuHints()
 	case ModeCullLoading:
 		return a.getCullLoadingHints()
 	case ModeCullResults:
@@ -300,6 +302,21 @@ func (a App) getReadLaterLoadingHints() HintSet {
 	return HintSet{
 		System: []Hint{
 			{Key: "", Desc: "adding..."},
+		},
+	}
+}
+
+// getCullMenuHints returns hints for ModeCullMenu.
+func (a App) getCullMenuHints() HintSet {
+	return HintSet{
+		Nav: []Hint{
+			{Key: "j/k", Desc: "navigate"},
+		},
+		Action: []Hint{
+			{Key: "Enter", Desc: "select"},
+		},
+		System: []Hint{
+			{Key: "Esc", Desc: "cancel"},
 		},
 	}
 }

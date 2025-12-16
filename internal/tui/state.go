@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"time"
+
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/nikbrunner/bm/internal/ai"
 	"github.com/nikbrunner/bm/internal/culler"
@@ -269,6 +271,9 @@ type CullState struct {
 	ItemCursor  int             // Selected bookmark in group
 	Progress    int             // Progress counter for loading
 	Total       int             // Total bookmarks being checked
+	MenuCursor  int             // Cursor for cull menu (0=fresh, 1=cached)
+	CacheTime   time.Time       // When cache was created
+	HasCache    bool            // Whether cache file exists
 }
 
 // CullGroup represents a group of cull results (defined here for state package access).
@@ -285,7 +290,7 @@ func NewCullState() CullState {
 	return CullState{}
 }
 
-// Reset clears all cull state.
+// Reset clears all cull state except cache info.
 func (c *CullState) Reset() {
 	c.Results = nil
 	c.Groups = nil
@@ -293,6 +298,8 @@ func (c *CullState) Reset() {
 	c.ItemCursor = 0
 	c.Progress = 0
 	c.Total = 0
+	c.MenuCursor = 0
+	// Note: HasCache and CacheTime are preserved
 }
 
 // CurrentGroup returns the currently selected group, or nil if none.

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/nikbrunner/bm/internal/model"
@@ -304,6 +305,9 @@ func (a App) renderModal() string {
 
 	case ModeQuickAddCreateFolder:
 		return a.renderQuickAddCreateFolder()
+
+	case ModeCullMenu:
+		return a.renderCullMenu()
 
 	case ModeCullLoading:
 		return a.renderCullLoading()
@@ -1021,6 +1025,91 @@ func (a App) renderHelpOverlay() string {
 		lipgloss.Top,
 		modalStyle.Render(cols),
 	)
+}
+
+// renderCullMenu renders the menu to choose between fresh or cached cull.
+func (a App) renderCullMenu() string {
+	modalWidth := layout.CalculateModalWidth(a.width, a.layoutConfig.Modal.DefaultWidthPercent, a.layoutConfig.Modal)
+
+	accent := lipgloss.AdaptiveColor{Light: "#4A7070", Dark: "#5F8787"}
+	modalStyle := lipgloss.NewStyle().
+		Border(lipgloss.ThickBorder()).
+		BorderForeground(accent).
+		Padding(1, 2).
+		Width(modalWidth)
+
+	var content strings.Builder
+	content.WriteString(a.styles.Title.Render("Cull Dead Links"))
+	content.WriteString("\n\n")
+
+	// Menu options
+	options := []string{
+		"Run fresh check",
+		"",
+	}
+
+	// Format cached option with age and count
+	if a.cull.HasCache {
+		age := formatTimeAgo(a.cull.CacheTime)
+		count := a.countCachedProblems()
+		options[1] = fmt.Sprintf("Use cached results (%s, %d issues)", age, count)
+	}
+
+	for i, opt := range options {
+		if opt == "" {
+			continue // Skip empty (no cache case shouldn't happen since menu only shows when cache exists)
+		}
+		line := opt
+		if i == a.cull.MenuCursor {
+			// Pad for selection highlight
+			padded := line
+			for len(padded) < modalWidth-8 {
+				padded += " "
+			}
+			content.WriteString(a.styles.ItemSelected.Render("▸ " + padded))
+		} else {
+			content.WriteString("  " + line)
+		}
+		content.WriteString("\n")
+	}
+
+	content.WriteString("\n")
+	content.WriteString(a.styles.Help.Render("j/k navigate  Enter select  Esc cancel"))
+
+	modal := lipgloss.Place(
+		a.width,
+		a.height-3,
+		lipgloss.Center,
+		lipgloss.Center,
+		modalStyle.Render(content.String()),
+	)
+
+	return lipgloss.JoinVertical(lipgloss.Left, modal, a.renderHelpBar())
+}
+
+// formatTimeAgo formats a duration since a timestamp in human-readable form.
+func formatTimeAgo(t time.Time) string {
+	d := time.Since(t)
+	if d < time.Minute {
+		return "just now"
+	} else if d < time.Hour {
+		m := int(d.Minutes())
+		if m == 1 {
+			return "1m ago"
+		}
+		return fmt.Sprintf("%dm ago", m)
+	} else if d < 24*time.Hour {
+		h := int(d.Hours())
+		if h == 1 {
+			return "1h ago"
+		}
+		return fmt.Sprintf("%dh ago", h)
+	}
+	days := int(d.Hours() / 24)
+	if days == 1 {
+		return "1d ago"
+	}
+	return fmt.Sprintf("%dd ago", days)
 }
 
 // renderCullLoading renders the loading screen during URL checking.
