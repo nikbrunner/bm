@@ -73,6 +73,16 @@ const (
 	ModeCullInspect          // Bookmark list within a cull group
 )
 
+// hasTextInput returns true if the mode has an active text input where 'q' shouldn't quit.
+func (m Mode) hasTextInput() bool {
+	switch m {
+	case ModeAddBookmark, ModeAddFolder, ModeEditFolder, ModeEditBookmark, ModeEditTags,
+		ModeSearch, ModeFilter, ModeQuickAdd, ModeQuickAddConfirm, ModeMove:
+		return true
+	}
+	return false
+}
+
 // SortMode represents the current sort mode.
 type SortMode int
 
@@ -774,17 +784,18 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case tea.KeyMsg:
-		// Handle modal modes first
+		// Handle q to quit globally (except when in text input mode)
+		if key.Matches(msg, a.keys.Quit) && !a.mode.hasTextInput() {
+			return a, tea.Quit
+		}
+
+		// Handle modal modes
 		if a.mode != ModeNormal {
 			return a.updateModal(msg)
 		}
 
-		// Handle global keys first (work in any pane)
-		switch {
-		case key.Matches(msg, a.keys.Quit):
-			return a, tea.Quit
-
-		case key.Matches(msg, a.keys.Help):
+		// Handle global keys (work in any pane, normal mode only)
+		if key.Matches(msg, a.keys.Help) {
 			a.mode = ModeHelp
 			return a, nil
 		}
@@ -1441,15 +1452,12 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case msg.Type == tea.KeyEsc:
 			a.mode = ModeNormal
 			return a, nil
-		case key.Matches(msg, a.keys.Quit):
-			// 'q' closes help, doesn't quit
-			a.mode = ModeNormal
-			return a, nil
 		case key.Matches(msg, a.keys.Help):
 			// '?' toggles help off
 			a.mode = ModeNormal
 			return a, nil
 		}
+		// q quits (handled globally above)
 		return a, nil
 	}
 
@@ -1562,11 +1570,8 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			case "d":
 				// Delete all in selected group
 				return a.cullDeleteGroup()
-			case "q":
-				a.cull.Reset()
-				a.mode = ModeNormal
-				return a, nil
 			}
+			// q quits (handled globally above)
 		}
 		return a, nil
 	}

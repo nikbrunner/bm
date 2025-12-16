@@ -1037,7 +1037,7 @@ func (a App) renderHelpOverlay() string {
 	right.WriteString(a.styles.Title.Render("tools") + "\n")
 	right.WriteString("C    cull dead links\n")
 	right.WriteString("\n")
-	right.WriteString(a.styles.Help.Render("[?/q/esc] close"))
+	right.WriteString(a.styles.Help.Render("[?/esc] close  [q] quit"))
 
 	// Join columns
 	leftCol := lipgloss.NewStyle().Width(a.layoutConfig.Modal.HelpLeftColumnWidth).Render(left.String())

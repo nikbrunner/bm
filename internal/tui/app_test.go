@@ -1789,7 +1789,7 @@ func TestApp_HelpOverlay_CloseWithEsc(t *testing.T) {
 	}
 }
 
-func TestApp_HelpOverlay_CloseWithQ(t *testing.T) {
+func TestApp_HelpOverlay_QuitWithQ(t *testing.T) {
 	store := &model.Store{
 		Folders:   []model.Folder{},
 		Bookmarks: []model.Bookmark{},
@@ -1801,18 +1801,12 @@ func TestApp_HelpOverlay_CloseWithQ(t *testing.T) {
 	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
 	app = updated.(tui.App)
 
-	// Press 'q' to close (should close help, not quit app)
-	updated, cmd := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
-	app = updated.(tui.App)
+	// Press 'q' - should quit app (q always quits except in text input modes)
+	_, cmd := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
 
-	// Should be back in normal mode (not quit)
-	if app.Mode() != tui.ModeNormal {
-		t.Error("expected normal mode after 'q' in help mode")
-	}
-
-	// Should not have quit command
-	if cmd != nil {
-		t.Error("'q' in help mode should close help, not quit")
+	// Should have quit command
+	if cmd == nil {
+		t.Error("'q' in help mode should quit the app")
 	}
 }
 
