@@ -12,7 +12,7 @@ import (
 	"github.com/nikbrunner/bm/internal/model"
 )
 
-const currentSchemaVersion = 1
+const currentSchemaVersion = 2
 
 // SQLiteStorage implements Storage using a SQLite database.
 type SQLiteStorage struct {
@@ -82,6 +82,12 @@ func (s *SQLiteStorage) migrate() error {
 		}
 	}
 
+	if version < 2 {
+		if err := s.migrateV2(); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -125,6 +131,17 @@ func (s *SQLiteStorage) migrateV1() error {
 	return err
 }
 
+// migrateV2 adds pin_order column for pinned item ordering.
+func (s *SQLiteStorage) migrateV2() error {
+	migration := `
+		ALTER TABLE folders ADD COLUMN pin_order INTEGER NOT NULL DEFAULT 0;
+		ALTER TABLE bookmarks ADD COLUMN pin_order INTEGER NOT NULL DEFAULT 0;
+		UPDATE schema_version SET version = 2;
+	`
+	_, err := s.db.Exec(migration)
+	return err
+}
+
 // Load reads the store from the SQLite database.
 func (s *SQLiteStorage) Load() (*model.Store, error) {
 	store := &model.Store{
@@ -134,7 +151,7 @@ func (s *SQLiteStorage) Load() (*model.Store, error) {
 
 	// Load folders
 	rows, err := s.db.Query(`
-		SELECT id, name, parent_id, pinned
+		SELECT id, name, parent_id, pinned, pin_order
 		FROM folders
 		ORDER BY name
 	`)
@@ -148,7 +165,7 @@ func (s *SQLiteStorage) Load() (*model.Store, error) {
 		var parentID sql.NullString
 		var pinned int
 
-		if err := rows.Scan(&f.ID, &f.Name, &parentID, &pinned); err != nil {
+		if err := rows.Scan(&f.ID, &f.Name, &parentID, &pinned, &f.PinOrder); err != nil {
 			return nil, err
 		}
 
@@ -166,7 +183,7 @@ func (s *SQLiteStorage) Load() (*model.Store, error) {
 
 	// Load bookmarks
 	rows, err = s.db.Query(`
-		SELECT id, title, url, folder_id, tags, created_at, visited_at, pinned
+		SELECT id, title, url, folder_id, tags, created_at, visited_at, pinned, pin_order
 		FROM bookmarks
 		ORDER BY created_at
 	`)
@@ -185,7 +202,7 @@ func (s *SQLiteStorage) Load() (*model.Store, error) {
 
 		if err := rows.Scan(
 			&b.ID, &b.Title, &b.URL, &folderID,
-			&tagsJSON, &createdAtStr, &visitedAtStr, &pinned,
+			&tagsJSON, &createdAtStr, &visitedAtStr, &pinned, &b.PinOrder,
 		); err != nil {
 			return nil, err
 		}
@@ -246,8 +263,8 @@ func (s *SQLiteStorage) Save(store *model.Store) error {
 
 	// Insert folders
 	folderStmt, err := tx.Prepare(`
-		INSERT INTO folders (id, name, parent_id, pinned)
-		VALUES (?, ?, ?, ?)
+		INSERT INTO folders (id, name, parent_id, pinned, pin_order)
+		VALUES (?, ?, ?, ?, ?)
 	`)
 	if err != nil {
 		return err
@@ -259,15 +276,15 @@ func (s *SQLiteStorage) Save(store *model.Store) error {
 		if f.Pinned {
 			pinned = 1
 		}
-		if _, err := folderStmt.Exec(f.ID, f.Name, f.ParentID, pinned); err != nil {
+		if _, err := folderStmt.Exec(f.ID, f.Name, f.ParentID, pinned, f.PinOrder); err != nil {
 			return err
 		}
 	}
 
 	// Insert bookmarks
 	bookmarkStmt, err := tx.Prepare(`
-		INSERT INTO bookmarks (id, title, url, folder_id, tags, created_at, visited_at, pinned)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO bookmarks (id, title, url, folder_id, tags, created_at, visited_at, pinned, pin_order)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`)
 	if err != nil {
 		return err
@@ -294,7 +311,7 @@ func (s *SQLiteStorage) Save(store *model.Store) error {
 
 		if _, err := bookmarkStmt.Exec(
 			b.ID, b.Title, b.URL, b.FolderID,
-			string(tagsJSON), createdAt, visitedAt, pinned,
+			string(tagsJSON), createdAt, visitedAt, pinned, b.PinOrder,
 		); err != nil {
 			return err
 		}

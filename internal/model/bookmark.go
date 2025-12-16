@@ -12,6 +12,7 @@ type Bookmark struct {
 	CreatedAt time.Time  `json:"createdAt"`
 	VisitedAt *time.Time `json:"visitedAt"` // nil = never visited
 	Pinned    bool       `json:"pinned"`
+	PinOrder  int        `json:"pinOrder"` // 1-9 for pinned items, 0 = not pinned
 }
 
 // NewBookmarkParams holds parameters for creating a new Bookmark.

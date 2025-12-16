@@ -133,7 +133,7 @@ func (a App) renderPinnedPane(width, height int) string {
 			}
 			// Highlight selected item only when pinned pane is focused
 			isSelected := a.focusedPane == PanePinned && i == a.pinnedCursor
-			line := a.renderPinnedItem(item, isSelected, itemWidth)
+			line := a.renderPinnedItem(item, isSelected, itemWidth, i)
 			content.WriteString(line + "\n")
 		}
 	}
@@ -151,12 +151,12 @@ func (a App) renderPinnedPane(width, height int) string {
 		Render(strings.TrimRight(content.String(), "\n"))
 }
 
-// renderPinnedItem renders an item in the pinned pane.
-func (a App) renderPinnedItem(item Item, selected bool, maxWidth int) string {
+// renderPinnedItem renders an item in the pinned pane with [N] prefix.
+func (a App) renderPinnedItem(item Item, selected bool, maxWidth int, index int) string {
 	var text, suffix string
 
-	// All pinned items get * prefix
-	prefix := "* "
+	// Show [N] prefix for quick access (1-indexed)
+	prefix := fmt.Sprintf("[%d] ", index+1)
 
 	if item.IsFolder() {
 		text = item.Title()

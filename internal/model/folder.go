@@ -6,6 +6,7 @@ type Folder struct {
 	Name     string  `json:"name"`
 	ParentID *string `json:"parentId"` // nil = root level
 	Pinned   bool    `json:"pinned"`
+	PinOrder int     `json:"pinOrder"` // 1-9 for pinned items, 0 = not pinned
 }
 
 // NewFolderParams holds parameters for creating a new Folder.

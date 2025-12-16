@@ -335,28 +335,42 @@ func (a *App) refreshItems() {
 	}
 }
 
-// refreshPinnedItems rebuilds the pinnedItems slice from the store.
+// refreshPinnedItems rebuilds the pinnedItems slice from the store, sorted by PinOrder.
 func (a *App) refreshPinnedItems() {
 	a.pinnedItems = []Item{}
 
-	// Get pinned folders and bookmarks
+	// Get pinned folders and bookmarks (already sorted by PinOrder)
 	folders := a.store.GetPinnedFolders()
 	bookmarks := a.store.GetPinnedBookmarks()
 
-	// Add folders first (same convention as browser)
+	// Combine into items with their PinOrder
+	type orderedItem struct {
+		item  Item
+		order int
+	}
+	var ordered []orderedItem
+
 	for i := range folders {
-		a.pinnedItems = append(a.pinnedItems, Item{
-			Kind:   ItemFolder,
-			Folder: &folders[i],
+		ordered = append(ordered, orderedItem{
+			item:  Item{Kind: ItemFolder, Folder: &folders[i]},
+			order: folders[i].PinOrder,
+		})
+	}
+	for i := range bookmarks {
+		ordered = append(ordered, orderedItem{
+			item:  Item{Kind: ItemBookmark, Bookmark: &bookmarks[i]},
+			order: bookmarks[i].PinOrder,
 		})
 	}
 
-	// Add bookmarks
-	for i := range bookmarks {
-		a.pinnedItems = append(a.pinnedItems, Item{
-			Kind:     ItemBookmark,
-			Bookmark: &bookmarks[i],
-		})
+	// Sort by PinOrder
+	sort.Slice(ordered, func(i, j int) bool {
+		return ordered[i].order < ordered[j].order
+	})
+
+	// Extract items in order
+	for _, o := range ordered {
+		a.pinnedItems = append(a.pinnedItems, o.item)
 	}
 }
 
@@ -1179,10 +1193,90 @@ func (a App) updatePinnedPane(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, nil
 	}
 
+	// Handle J/K for reordering pinned items
+	if msg.String() == "J" {
+		return a.movePinnedItemDown()
+	}
+	if msg.String() == "K" {
+		return a.movePinnedItemUp()
+	}
+
+	// Handle 1-9 for quick access to pinned items
+	if len(msg.String()) == 1 && msg.String() >= "1" && msg.String() <= "9" {
+		idx := int(msg.String()[0] - '1') // "1" -> 0, "2" -> 1, etc.
+		if idx < len(a.pinnedItems) {
+			a.pinnedCursor = idx
+			return a.activatePinnedItem()
+		}
+		return a, nil
+	}
+
 	// Handle Enter key for activating pinned items
 	if msg.Type == tea.KeyEnter {
 		return a.activatePinnedItem()
 	}
+
+	return a, nil
+}
+
+// movePinnedItemUp moves the selected pinned item up (lower PinOrder).
+func (a *App) movePinnedItemUp() (tea.Model, tea.Cmd) {
+	if a.pinnedCursor <= 0 || len(a.pinnedItems) < 2 {
+		return a, nil
+	}
+
+	// Get current and target items
+	current := a.pinnedItems[a.pinnedCursor]
+	target := a.pinnedItems[a.pinnedCursor-1]
+
+	// Get their PinOrders
+	var currentOrder, targetOrder int
+	if current.IsFolder() {
+		currentOrder = current.Folder.PinOrder
+	} else {
+		currentOrder = current.Bookmark.PinOrder
+	}
+	if target.IsFolder() {
+		targetOrder = target.Folder.PinOrder
+	} else {
+		targetOrder = target.Bookmark.PinOrder
+	}
+
+	// Swap orders
+	a.store.SwapPinOrders(currentOrder, targetOrder)
+	a.refreshPinnedItems()
+	a.pinnedCursor--
+
+	return a, nil
+}
+
+// movePinnedItemDown moves the selected pinned item down (higher PinOrder).
+func (a *App) movePinnedItemDown() (tea.Model, tea.Cmd) {
+	if a.pinnedCursor >= len(a.pinnedItems)-1 || len(a.pinnedItems) < 2 {
+		return a, nil
+	}
+
+	// Get current and target items
+	current := a.pinnedItems[a.pinnedCursor]
+	target := a.pinnedItems[a.pinnedCursor+1]
+
+	// Get their PinOrders
+	var currentOrder, targetOrder int
+	if current.IsFolder() {
+		currentOrder = current.Folder.PinOrder
+	} else {
+		currentOrder = current.Bookmark.PinOrder
+	}
+	if target.IsFolder() {
+		targetOrder = target.Folder.PinOrder
+	} else {
+		targetOrder = target.Bookmark.PinOrder
+	}
+
+	// Swap orders
+	a.store.SwapPinOrders(currentOrder, targetOrder)
+	a.refreshPinnedItems()
+	a.pinnedCursor++
 
 	return a, nil
 }
