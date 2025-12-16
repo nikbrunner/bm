@@ -516,4 +516,3 @@ func TestSQLiteStorage_ImportExportRoundtrip(t *testing.T) {
 		t.Error("React folder should have a parent")
 	}
 }
-

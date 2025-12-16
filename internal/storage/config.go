@@ -9,23 +9,30 @@ import (
 
 // Config holds application configuration.
 type Config struct {
-	QuickAddFolder string `json:"quickAddFolder"`
+	QuickAddFolder      string   `json:"quickAddFolder"`
+	CullExcludeDomains  []string `json:"cullExcludeDomains"`
 }
 
 // DefaultConfig returns the default configuration.
 func DefaultConfig() Config {
 	return Config{
-		QuickAddFolder: "Read Later",
+		QuickAddFolder:     "Read Later",
+		CullExcludeDomains: []string{"github.com", "gitlab.com"},
 	}
 }
 
 // LoadConfig reads config from the JSON file.
-// Returns default config if the file doesn't exist.
+// Creates the file with defaults if it doesn't exist.
 func LoadConfig(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			config := DefaultConfig()
+			// Create the config file with defaults
+			if saveErr := SaveConfig(path, &config); saveErr != nil {
+				// Non-fatal: return defaults even if save fails
+				return &config, nil
+			}
 			return &config, nil
 		}
 		return nil, err
@@ -37,8 +44,12 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	// Apply defaults for missing fields
+	defaults := DefaultConfig()
 	if config.QuickAddFolder == "" {
-		config.QuickAddFolder = DefaultConfig().QuickAddFolder
+		config.QuickAddFolder = defaults.QuickAddFolder
+	}
+	if config.CullExcludeDomains == nil {
+		config.CullExcludeDomains = defaults.CullExcludeDomains
 	}
 
 	return &config, nil

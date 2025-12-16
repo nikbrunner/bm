@@ -12,6 +12,7 @@ import (
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/nikbrunner/bm/internal/ai"
+	"github.com/nikbrunner/bm/internal/culler"
 	"github.com/nikbrunner/bm/internal/exporter"
 	"github.com/nikbrunner/bm/internal/importer"
 	"github.com/nikbrunner/bm/internal/model"
@@ -51,6 +52,10 @@ func main() {
 			}
 			runExport(outputPath)
 			return
+		case "cull":
+			deleteFlag := len(os.Args) >= 3 && os.Args[2] == "--delete"
+			runCull(deleteFlag)
+			return
 		default:
 			// Treat as search query (join all remaining args)
 			query := strings.Join(os.Args[1:], " ")
@@ -74,6 +79,8 @@ Usage:
   bm reset              Clear all data (requires confirmation)
   bm import <file>      Import bookmarks from HTML
   bm export [path]      Export bookmarks to HTML
+  bm cull               Check all URLs, report dead links
+  bm cull --delete      Check all URLs, delete dead links
   bm help               Show this help
 
 Quick Add Options:
@@ -284,6 +291,94 @@ func runExport(outputPath string) {
 		len(store.Bookmarks), len(store.Folders), outputPath)
 }
 
+// runCull checks all bookmark URLs and reports/deletes dead ones.
+func runCull(deleteFlag bool) {
+	store, dataStorage, closeStorage := loadStorage()
+	defer closeStorage()
+
+	// Load config for excluded domains
+	configPath, err := storage.DefaultConfigFilePath()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error getting config path: %v\n", err)
+		os.Exit(1)
+	}
+	config, err := storage.LoadConfig(configPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
+		os.Exit(1)
+	}
+
+	if len(store.Bookmarks) == 0 {
+		fmt.Println("No bookmarks to check.")
+		return
+	}
+
+	fmt.Printf("Checking %d bookmarks...\n", len(store.Bookmarks))
+	if len(config.CullExcludeDomains) > 0 {
+		fmt.Printf("Excluding domains: %v\n", config.CullExcludeDomains)
+	}
+
+	// Progress callback
+	onProgress := func(completed, total int) {
+		fmt.Printf("\rChecking %d bookmarks... [%d/%d]", total, completed, total)
+	}
+
+	results := culler.CheckURLs(store.Bookmarks, 10, 10*time.Second, config.CullExcludeDomains, onProgress)
+	fmt.Println() // New line after progress
+
+	// Categorize results
+	var dead, unreachable []culler.Result
+	for _, r := range results {
+		switch r.Status {
+		case culler.Dead:
+			dead = append(dead, r)
+		case culler.Unreachable:
+			unreachable = append(unreachable, r)
+		}
+	}
+
+	// Print results
+	if len(dead) > 0 {
+		fmt.Printf("\nDEAD (%d):\n", len(dead))
+		for _, r := range dead {
+			fmt.Printf("  • \"%s\" - %s (HTTP %d)\n", r.Bookmark.Title, r.Bookmark.URL, r.StatusCode)
+		}
+	}
+
+	if len(unreachable) > 0 {
+		// Group unreachable by error type
+		errorGroups := make(map[string][]culler.Result)
+		for _, r := range unreachable {
+			errorGroups[r.Error] = append(errorGroups[r.Error], r)
+		}
+
+		fmt.Printf("\nUNREACHABLE (%d):\n", len(unreachable))
+		for errorType, items := range errorGroups {
+			fmt.Printf("\n  [%s] (%d):\n", errorType, len(items))
+			for _, r := range items {
+				fmt.Printf("    • \"%s\" - %s\n", r.Bookmark.Title, r.Bookmark.URL)
+			}
+		}
+	}
+
+	healthy := len(store.Bookmarks) - len(dead) - len(unreachable)
+	fmt.Printf("\nSummary: %d healthy, %d dead, %d unreachable\n", healthy, len(dead), len(unreachable))
+
+	// Delete if requested
+	if deleteFlag && len(dead) > 0 {
+		for _, r := range dead {
+			store.RemoveBookmarkByID(r.Bookmark.ID)
+		}
+		if err := dataStorage.Save(store); err != nil {
+			fmt.Fprintf(os.Stderr, "Error saving: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("\nDeleted %d dead bookmarks.\n", len(dead))
+	} else if deleteFlag && len(dead) == 0 {
+		fmt.Println("\nNo dead bookmarks to delete.")
+	}
+}
+
 // runAdd handles the quick add command.
 func runAdd(args []string) {
 	// Parse flags
@@ -426,96 +521,112 @@ func runInit() {
 		os.Exit(1)
 	}
 
-	// Check if data file already exists
+	dataExists := false
+	configExists := false
+
 	if _, err := os.Stat(dataPath); err == nil {
-		fmt.Fprintf(os.Stderr, "Data file already exists: %s\n", dataPath)
-		fmt.Fprintf(os.Stderr, "Use 'bm reset' to clear existing data\n")
-		os.Exit(1)
+		dataExists = true
+	}
+	if _, err := os.Stat(configPath); err == nil {
+		configExists = true
 	}
 
-	// Create sample data
-	now := time.Now()
-	devFolderID := "dev-folder"
-	toolsFolderID := "tools-folder"
-	readLaterFolderID := "read-later-folder"
-
-	store := &model.Store{
-		Folders: []model.Folder{
-			{
-				ID:       devFolderID,
-				Name:     "Development",
-				ParentID: nil,
-			},
-			{
-				ID:       toolsFolderID,
-				Name:     "Tools",
-				ParentID: nil,
-			},
-			{
-				ID:       readLaterFolderID,
-				Name:     "Read Later",
-				ParentID: nil,
-			},
-		},
-		Bookmarks: []model.Bookmark{
-			{
-				ID:        "bm-github",
-				Title:     "GitHub",
-				URL:       "https://github.com",
-				FolderID:  &devFolderID,
-				Tags:      []string{"code", "git"},
-				CreatedAt: now,
-			},
-			{
-				ID:        "bm-go",
-				Title:     "Go Documentation",
-				URL:       "https://go.dev/doc",
-				FolderID:  &devFolderID,
-				Tags:      []string{"go", "docs"},
-				CreatedAt: now,
-			},
-			{
-				ID:        "bm-charm",
-				Title:     "Charm - TUI Libraries",
-				URL:       "https://charm.sh",
-				FolderID:  &toolsFolderID,
-				Tags:      []string{"tui", "go"},
-				CreatedAt: now,
-			},
-			{
-				ID:        "bm-hn",
-				Title:     "Hacker News",
-				URL:       "https://news.ycombinator.com",
-				FolderID:  nil,
-				Tags:      []string{"news", "tech"},
-				CreatedAt: now,
-			},
-		},
+	// If both exist, nothing to do
+	if dataExists && configExists {
+		fmt.Println("Already initialized:")
+		fmt.Printf("  %s (data)\n", dataPath)
+		fmt.Printf("  %s (config)\n", configPath)
+		return
 	}
 
-	// Save data file
-	sqliteStorage, err := storage.NewSQLiteStorage(dataPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating database: %v\n", err)
-		os.Exit(1)
-	}
-	defer sqliteStorage.Close()
+	fmt.Println("Created:")
 
-	if err := sqliteStorage.Save(store); err != nil {
-		fmt.Fprintf(os.Stderr, "Error saving data: %v\n", err)
-		os.Exit(1)
+	// Create data file if missing
+	if !dataExists {
+		now := time.Now()
+		devFolderID := "dev-folder"
+		toolsFolderID := "tools-folder"
+		readLaterFolderID := "read-later-folder"
+
+		store := &model.Store{
+			Folders: []model.Folder{
+				{
+					ID:       devFolderID,
+					Name:     "Development",
+					ParentID: nil,
+				},
+				{
+					ID:       toolsFolderID,
+					Name:     "Tools",
+					ParentID: nil,
+				},
+				{
+					ID:       readLaterFolderID,
+					Name:     "Read Later",
+					ParentID: nil,
+				},
+			},
+			Bookmarks: []model.Bookmark{
+				{
+					ID:        "bm-github",
+					Title:     "GitHub",
+					URL:       "https://github.com",
+					FolderID:  &devFolderID,
+					Tags:      []string{"code", "git"},
+					CreatedAt: now,
+				},
+				{
+					ID:        "bm-go",
+					Title:     "Go Documentation",
+					URL:       "https://go.dev/doc",
+					FolderID:  &devFolderID,
+					Tags:      []string{"go", "docs"},
+					CreatedAt: now,
+				},
+				{
+					ID:        "bm-charm",
+					Title:     "Charm - TUI Libraries",
+					URL:       "https://charm.sh",
+					FolderID:  &toolsFolderID,
+					Tags:      []string{"tui", "go"},
+					CreatedAt: now,
+				},
+				{
+					ID:        "bm-hn",
+					Title:     "Hacker News",
+					URL:       "https://news.ycombinator.com",
+					FolderID:  nil,
+					Tags:      []string{"news", "tech"},
+					CreatedAt: now,
+				},
+			},
+		}
+
+		sqliteStorage, err := storage.NewSQLiteStorage(dataPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating database: %v\n", err)
+			os.Exit(1)
+		}
+		defer sqliteStorage.Close()
+
+		if err := sqliteStorage.Save(store); err != nil {
+			fmt.Fprintf(os.Stderr, "Error saving data: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("  %s (%d folders, %d bookmarks)\n", dataPath, len(store.Folders), len(store.Bookmarks))
 	}
 
-	// Save config file
-	config := storage.DefaultConfig()
-	if err := storage.SaveConfig(configPath, &config); err != nil {
-		fmt.Fprintf(os.Stderr, "Error saving config: %v\n", err)
-		os.Exit(1)
+	// Create config file if missing
+	if !configExists {
+		config := storage.DefaultConfig()
+		if err := storage.SaveConfig(configPath, &config); err != nil {
+			fmt.Fprintf(os.Stderr, "Error saving config: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("  %s\n", configPath)
 	}
 
-	fmt.Printf("Created:\n")
-	fmt.Printf("  %s (%d folders, %d bookmarks)\n", dataPath, len(store.Folders), len(store.Bookmarks))
-	fmt.Printf("  %s (quick add folder: %s)\n", configPath, config.QuickAddFolder)
 	fmt.Println("\nRun 'bm' to open the TUI")
 }
 
@@ -573,4 +684,3 @@ func loadStorage() (*model.Store, storage.Storage, func()) {
 
 	return store, dataStorage, closeFunc
 }
-
