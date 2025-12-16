@@ -61,6 +61,11 @@ type sortCompleteMsg struct{}
 // sortTickMsg is sent periodically to update progress display.
 type sortTickMsg struct{}
 
+// sortResultsMsg carries the final suggestions.
+type sortResultsMsg struct {
+	suggestions []SortSuggestion
+}
+
 // Mode represents the current UI mode.
 type Mode int
 
@@ -907,6 +912,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.cull.Total = len(a.store.Bookmarks)
 			a.mode = ModeCullLoading
 			return a, a.startCullCmd()
+
+		case key.Matches(msg, a.keys.AutoSort):
+			// Auto-sort: analyze current item or folder contents
+			return a.startSort()
 
 		case key.Matches(msg, a.keys.ToggleConfirm):
 			// Toggle delete confirmation
@@ -3005,6 +3014,13 @@ func cullTickCmd() tea.Cmd {
 	})
 }
 
+// sortTickCmd returns a command that ticks every 100ms to update progress.
+func sortTickCmd() tea.Cmd {
+	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
+		return sortTickMsg{}
+	})
+}
+
 // cullCachePath returns the path to the cull cache file.
 func cullCachePath() (string, error) {
 	homeDir, err := os.UserHomeDir()
@@ -3313,4 +3329,133 @@ func (a *App) cullMoveItem() (tea.Model, tea.Cmd) {
 	a.move.FolderIdx = a.findMoveFolderIndex(currentPath)
 
 	return a, a.move.FilterInput.Focus()
+}
+
+// startSort initiates the AI-powered sort analysis.
+func (a *App) startSort() (tea.Model, tea.Cmd) {
+	// Check for API key first
+	client, err := ai.NewClient()
+	if err != nil {
+		cmd := a.setMessage(MessageError, "No API key: set ANTHROPIC_API_KEY")
+		return a, cmd
+	}
+	_ = client // Will be used in the command
+
+	// Get the current item
+	displayItems := a.getDisplayItems()
+	if len(displayItems) == 0 || a.browser.Cursor >= len(displayItems) {
+		cmd := a.setMessage(MessageError, "No item selected")
+		return a, cmd
+	}
+	item := displayItems[a.browser.Cursor]
+
+	// Reset sort state
+	a.sort.Reset()
+
+	// Collect items to analyze
+	var itemsToAnalyze []Item
+	if item.IsFolder() {
+		// Recursively collect all items in folder
+		itemsToAnalyze = a.collectFolderItemsRecursive(item.Folder.ID)
+		a.sort.SourceFolderID = &item.Folder.ID
+	} else {
+		itemsToAnalyze = []Item{item}
+		a.sort.SourceItem = &item
+	}
+
+	if len(itemsToAnalyze) == 0 {
+		cmd := a.setMessage(MessageInfo, "No items to sort")
+		return a, cmd
+	}
+
+	a.sort.Total = len(itemsToAnalyze)
+	a.mode = ModeSortLoading
+
+	// Reset progress counter
+	atomic.StoreInt64(&sortProgressCounter, 0)
+
+	// Start analysis
+	return a, tea.Batch(
+		a.analyzeSortItems(itemsToAnalyze),
+		sortTickCmd(),
+	)
+}
+
+// collectFolderItemsRecursive collects all bookmarks and folders recursively.
+func (a *App) collectFolderItemsRecursive(folderID string) []Item {
+	var items []Item
+
+	// Get direct children
+	bookmarks := a.store.GetBookmarksInFolder(&folderID)
+	for i := range bookmarks {
+		items = append(items, Item{Kind: ItemBookmark, Bookmark: &bookmarks[i]})
+	}
+
+	folders := a.store.GetFoldersInFolder(&folderID)
+	for i := range folders {
+		items = append(items, Item{Kind: ItemFolder, Folder: &folders[i]})
+		// Recurse into subfolders
+		items = append(items, a.collectFolderItemsRecursive(folders[i].ID)...)
+	}
+
+	return items
+}
+
+// analyzeSortItems starts the AI analysis for all items.
+func (a *App) analyzeSortItems(items []Item) tea.Cmd {
+	return func() tea.Msg {
+		client, err := ai.NewClient()
+		if err != nil {
+			return sortCompleteMsg{}
+		}
+
+		context := ai.BuildContext(a.store)
+		var suggestions []SortSuggestion
+
+		for i, item := range items {
+			atomic.StoreInt64(&sortProgressCounter, int64(i+1))
+
+			var title, url, currentPath string
+			var tags []string
+			var isFolder bool
+
+			if item.IsFolder() {
+				title = item.Folder.Name
+				currentPath = a.store.GetFolderPath(item.Folder.ParentID)
+				isFolder = true
+			} else {
+				title = item.Bookmark.Title
+				url = item.Bookmark.URL
+				currentPath = a.store.GetFolderPath(item.Bookmark.FolderID)
+				tags = item.Bookmark.Tags
+				isFolder = false
+			}
+
+			resp, err := client.SuggestSort(title, url, currentPath, tags, isFolder, context)
+			if err != nil {
+				continue // Skip items that fail
+			}
+
+			// Filter out items already in the best place
+			if resp.FolderPath == currentPath {
+				continue
+			}
+
+			// Filter out low confidence suggestions
+			if resp.Confidence == "low" {
+				continue
+			}
+
+			suggestions = append(suggestions, SortSuggestion{
+				Item:          item,
+				CurrentPath:   currentPath,
+				SuggestedPath: resp.FolderPath,
+				IsNewFolder:   resp.IsNewFolder,
+				Processed:     false,
+			})
+		}
+
+		// Store suggestions and complete
+		return sortResultsMsg{suggestions: suggestions}
+	}
 }

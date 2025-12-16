@@ -32,6 +32,7 @@ type KeyMap struct {
 	SelectVisual  key.Binding
 	ClearSelect   key.Binding
 	Cull          key.Binding
+	AutoSort      key.Binding
 	Help          key.Binding
 	Quit          key.Binding
 }
@@ -150,6 +151,10 @@ func DefaultKeyMap() KeyMap {
 		Cull: key.NewBinding(
 			key.WithKeys("C"),
 			key.WithHelp("C", "cull dead links"),
+		),
+		AutoSort: key.NewBinding(
+			key.WithKeys("S"),
+			key.WithHelp("S", "auto-sort"),
 		),
 		Help: key.NewBinding(
 			key.WithKeys("?"),
