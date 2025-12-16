@@ -318,3 +318,56 @@ func (c *CullState) CurrentItem() *culler.Result {
 	}
 	return &group.Results[c.ItemCursor]
 }
+
+// SortState holds state for the AI-powered auto-sort feature.
+type SortState struct {
+	SourceFolderID *string          // Folder being sorted (nil if single item)
+	SourceItem     *Item            // Single item if sorting one bookmark/folder
+	Suggestions    []SortSuggestion // Items that need relocation
+	Cursor         int              // Current selection in suggestions list
+	Progress       int              // Items analyzed so far
+	Total          int              // Total items to analyze
+}
+
+// SortSuggestion represents a suggested relocation for an item.
+type SortSuggestion struct {
+	Item          Item   // The bookmark or folder to move
+	CurrentPath   string // Where it is now
+	SuggestedPath string // Where AI suggests moving it
+	IsNewFolder   bool   // True if destination folder doesn't exist yet
+	Processed     bool   // True after user accepts/skips/deletes
+}
+
+// NewSortState creates an empty SortState.
+func NewSortState() SortState {
+	return SortState{}
+}
+
+// Reset clears all sort state.
+func (s *SortState) Reset() {
+	s.SourceFolderID = nil
+	s.SourceItem = nil
+	s.Suggestions = nil
+	s.Cursor = 0
+	s.Progress = 0
+	s.Total = 0
+}
+
+// CurrentSuggestion returns the currently selected suggestion, or nil if none.
+func (s *SortState) CurrentSuggestion() *SortSuggestion {
+	if len(s.Suggestions) == 0 || s.Cursor >= len(s.Suggestions) {
+		return nil
+	}
+	return &s.Suggestions[s.Cursor]
+}
+
+// UnprocessedCount returns the number of suggestions not yet processed.
+func (s *SortState) UnprocessedCount() int {
+	count := 0
+	for _, sug := range s.Suggestions {
+		if !sug.Processed {
+			count++
+		}
+	}
+	return count
+}
