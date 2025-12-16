@@ -765,13 +765,34 @@ func (a App) renderHelpBar() string {
 		lines = append(lines, lineStyle.Render(a.renderStatusToggles()))
 	}
 
-	// Line 3: Contextual keyboard hints
-	hintsStr := a.renderHints(a.getContextualHints())
-	if hintsStr != "" {
-		lines = append(lines, lineStyle.Render(hintsStr))
+	// Line 3: Local (contextual) keyboard hints
+	localHints := a.renderHints(a.getContextualHints())
+	if localHints != "" {
+		lines = append(lines, a.styles.HintLabel.Render("Local  ")+localHints)
+	}
+
+	// Line 4: Global keyboard hints (only in normal mode - modals have their own flow)
+	if a.mode == ModeNormal {
+		globalHints := a.renderHintSlice(a.getGlobalHints())
+		if globalHints != "" {
+			lines = append(lines, a.styles.HintLabel.Render("Global ")+globalHints)
+		}
 	}
 
 	return strings.Join(lines, "\n")
+}
+
+// renderHintSlice renders a slice of hints in horizontal format.
+func (a App) renderHintSlice(hints []Hint) string {
+	if len(hints) == 0 {
+		return ""
+	}
+
+	parts := make([]string, len(hints))
+	for i, h := range hints {
+		parts[i] = a.renderHint(h)
+	}
+	return strings.Join(parts, " ")
 }
 
 // renderMessageLine renders the styled message with prefix icon based on type.
@@ -994,6 +1015,7 @@ func (a App) renderHelpOverlay() string {
 	right.WriteString("a    add bookmark\n")
 	right.WriteString("A    add folder\n")
 	right.WriteString("i    AI add\n")
+	right.WriteString("L    read later\n")
 	right.WriteString("e    edit\n")
 	right.WriteString("t    tags\n")
 	right.WriteString("y    yank\n")
@@ -1073,9 +1095,6 @@ func (a App) renderCullMenu() string {
 		content.WriteString("\n")
 	}
 
-	content.WriteString("\n")
-	content.WriteString(a.styles.Help.Render("j/k navigate  Enter select  Esc cancel"))
-
 	modal := lipgloss.Place(
 		a.width,
 		a.height-3,
@@ -1139,9 +1158,6 @@ func (a App) renderCullLoading() string {
 		content.WriteString(bar + "\n\n")
 		content.WriteString(fmt.Sprintf("[%d/%d]", a.cull.Progress, a.cull.Total))
 	}
-
-	content.WriteString("\n\n")
-	content.WriteString(a.styles.Help.Render("Press Esc to cancel"))
 
 	modal := lipgloss.Place(
 		a.width,
@@ -1209,9 +1225,6 @@ func (a App) renderCullResults() string {
 			content.WriteString("\n")
 		}
 	}
-
-	content.WriteString("\n")
-	content.WriteString(a.styles.Help.Render("j/k navigate  Enter inspect  d delete all  q/Esc quit"))
 
 	modal := lipgloss.Place(
 		a.width,
@@ -1282,8 +1295,6 @@ func (a App) renderCullInspect() string {
 			}
 		}
 	}
-
-	content.WriteString(a.styles.Help.Render("j/k navigate  d delete  o open  e edit  m move  Esc back"))
 
 	modal := lipgloss.Place(
 		a.width,

@@ -61,6 +61,20 @@ func (h HintSet) All() []Hint {
 	return result
 }
 
+// getGlobalHints returns hints for keys that work in any pane/mode.
+func (a App) getGlobalHints() []Hint {
+	return []Hint{
+		{Key: "s", Desc: "search"},
+		{Key: "/", Desc: "filter"},
+		{Key: "i", Desc: "AI add"},
+		{Key: "L", Desc: "read later"},
+		{Key: "a/A", Desc: "add"},
+		{Key: "C", Desc: "cull"},
+		{Key: "?", Desc: "help"},
+		{Key: "q", Desc: "quit"},
+	}
+}
+
 // getContextualHints returns the appropriate hints for the current mode.
 func (a App) getContextualHints() HintSet {
 	switch a.mode {
@@ -109,6 +123,7 @@ func (a App) getContextualHints() HintSet {
 }
 
 // getNormalModeHints returns hints for ModeNormal (main browse).
+// Only shows local/pane-specific hints - global hints are shown separately.
 func (a App) getNormalModeHints() HintSet {
 	hints := HintSet{
 		Nav: []Hint{
@@ -116,26 +131,24 @@ func (a App) getNormalModeHints() HintSet {
 			{Key: "h", Desc: "back"},
 			{Key: "l", Desc: "open"},
 		},
-		Action: []Hint{
-			{Key: "s", Desc: "search"},
-			{Key: "/", Desc: "filter"},
-		},
 		Edit: []Hint{
-			{Key: "a", Desc: "add"},
-			{Key: "e", Desc: "edit"},
+			{Key: "y", Desc: "yank"},
 			{Key: "d", Desc: "del"},
+			{Key: "x", Desc: "cut"},
+			{Key: "p", Desc: "paste"},
+			{Key: "e", Desc: "edit"},
 		},
-		System: []Hint{
-			{Key: "C", Desc: "cull"},
-			{Key: "?", Desc: "help"},
-			{Key: "q", Desc: "quit"},
+		Action: []Hint{
+			{Key: "*", Desc: "pin"},
+			{Key: "m", Desc: "move"},
+			{Key: "v/V", Desc: "select"},
 		},
 	}
 
 	// Show selection hints when items are selected
 	if a.selection.HasSelection() {
 		count := a.selection.Count()
-		hints.Edit = []Hint{
+		hints.Action = []Hint{
 			{Key: "v", Desc: "±sel"},
 			{Key: "Esc", Desc: "clear"},
 			{Key: "d", Desc: "del " + strconv.Itoa(count)},

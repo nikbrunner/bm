@@ -21,4 +21,4 @@
   ┗━━━━━━━━━━━━━━━━━━━━━━━━┛┗━━━━━━━━━━━━━━━━━━━━━━━━┛┗━━━━━━━━━━━━━━━━━━━━━━━━┛  
                                                                                   
   [ord:man] [cfm:on]                                                              
-  type:filter Enter:apply Esc:cancel                                              
+  Local  type:filter Enter:apply Esc:cancel                                       

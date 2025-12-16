@@ -21,6 +21,7 @@ type Styles struct {
 	Empty            lipgloss.Style
 	HintKey          lipgloss.Style // Key portion of hints (e.g., "Enter", "j/k")
 	HintDesc         lipgloss.Style // Description portion of hints (e.g., "confirm", "move")
+	HintLabel        lipgloss.Style // Label for hint sections (e.g., "Local:", "Global:")
 	Breadcrumb       lipgloss.Style // Folder path breadcrumb above Miller columns
 }
 
@@ -96,10 +97,15 @@ func DefaultStyles() Styles {
 			Foreground(subtle),
 
 		HintKey: lipgloss.NewStyle().
-			Foreground(subtle),
+			Foreground(accent).
+			Bold(true),
 
 		HintDesc: lipgloss.NewStyle().
 			Foreground(subtle),
+
+		HintLabel: lipgloss.NewStyle().
+			Foreground(primary).
+			Bold(true),
 
 		Breadcrumb: lipgloss.NewStyle().
 			Foreground(subtle).
