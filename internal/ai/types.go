@@ -7,6 +7,13 @@ type Response struct {
 	Tags       []string `json:"tags"`
 }
 
+// SortResponse represents the AI-suggested relocation for an item.
+type SortResponse struct {
+	FolderPath  string `json:"folderPath"`
+	IsNewFolder bool   `json:"isNewFolder"`
+	Confidence  string `json:"confidence"` // "high", "medium", "low"
+}
+
 // apiRequest represents the Anthropic API request body.
 type apiRequest struct {
 	Model        string        `json:"model"`
