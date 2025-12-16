@@ -48,6 +48,19 @@ type aiResponseMsg struct {
 	err      error
 }
 
+// sortResponseMsg is sent when an AI sort suggestion completes.
+type sortResponseMsg struct {
+	item     Item
+	response *ai.SortResponse
+	err      error
+}
+
+// sortCompleteMsg is sent when all items have been analyzed.
+type sortCompleteMsg struct{}
+
+// sortTickMsg is sent periodically to update progress display.
+type sortTickMsg struct{}
+
 // Mode represents the current UI mode.
 type Mode int
 
