@@ -765,6 +765,115 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a.updateModal(msg)
 		}
 
+		// Handle global keys first (work in any pane)
+		switch {
+		case key.Matches(msg, a.keys.Quit):
+			return a, tea.Quit
+
+		case key.Matches(msg, a.keys.Help):
+			a.mode = ModeHelp
+			return a, nil
+
+		case key.Matches(msg, a.keys.Search):
+			// Open fuzzy finder mode with GLOBAL search
+			a.mode = ModeSearch
+			a.search.Input.Reset()
+			a.search.Input.Focus()
+			a.search.FuzzyCursor = 0
+			// Gather ALL items from the entire store for fuzzy matching
+			a.search.AllItems = []Item{}
+			for i := range a.store.Folders {
+				a.search.AllItems = append(a.search.AllItems, Item{
+					Kind:   ItemFolder,
+					Folder: &a.store.Folders[i],
+				})
+			}
+			for i := range a.store.Bookmarks {
+				a.search.AllItems = append(a.search.AllItems, Item{
+					Kind:     ItemBookmark,
+					Bookmark: &a.store.Bookmarks[i],
+				})
+			}
+			a.updateFuzzyMatches()
+			return a, a.search.Input.Focus()
+
+		case key.Matches(msg, a.keys.Filter):
+			// Open local filter for current folder
+			a.mode = ModeFilter
+			a.search.FilterInput.Reset()
+			a.search.FilterInput.SetValue(a.search.FilterQuery) // Restore previous filter
+			a.search.FilterInput.Focus()
+			return a, a.search.FilterInput.Focus()
+
+		case key.Matches(msg, a.keys.QuickAdd):
+			// AI-powered quick add
+			a.mode = ModeQuickAdd
+			a.quickAdd.Reset()
+			// Pre-fill with clipboard contents
+			if clipContent, err := clipboard.ReadAll(); err == nil && clipContent != "" {
+				a.quickAdd.Input.SetValue(clipContent)
+			}
+			a.quickAdd.Input.Focus()
+			return a, a.quickAdd.Input.Focus()
+
+		case key.Matches(msg, a.keys.ReadLater):
+			// Quick add to Read Later from clipboard
+			clipContent, err := clipboard.ReadAll()
+			if err != nil {
+				cmd := a.setMessage(MessageError, "Failed to read clipboard")
+				return a, cmd
+			}
+			clipContent = strings.TrimSpace(clipContent)
+			if clipContent == "" {
+				cmd := a.setMessage(MessageError, "No URL in clipboard")
+				return a, cmd
+			}
+			// Validate URL
+			parsedURL, err := url.Parse(clipContent)
+			if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
+				cmd := a.setMessage(MessageError, "Invalid URL in clipboard")
+				return a, cmd
+			}
+			// Start AI-powered quick add to Read Later
+			a.readLaterURL = clipContent
+			a.mode = ModeReadLaterLoading
+			cmd := a.setMessage(MessageInfo, "Adding to "+a.config.QuickAddFolder+"...")
+			return a, tea.Batch(cmd, a.callAICmd(clipContent))
+
+		case key.Matches(msg, a.keys.Cull):
+			// Check if cache exists
+			a.checkCullCache()
+			if a.cull.HasCache {
+				// Show menu to choose fresh vs cached
+				a.cull.MenuCursor = 0
+				a.mode = ModeCullMenu
+				return a, nil
+			}
+			// No cache - go directly to loading
+			a.cull.Reset()
+			a.cull.Total = len(a.store.Bookmarks)
+			a.mode = ModeCullLoading
+			return a, a.startCullCmd()
+
+		case key.Matches(msg, a.keys.ToggleConfirm):
+			// Toggle delete confirmation
+			a.confirmDelete = !a.confirmDelete
+			return a, nil
+
+		case key.Matches(msg, a.keys.AddBookmark):
+			a.mode = ModeAddBookmark
+			a.modal.TitleInput.Reset()
+			a.modal.URLInput.Reset()
+			a.modal.TitleInput.Focus()
+			return a, a.modal.TitleInput.Focus()
+
+		case key.Matches(msg, a.keys.AddFolder):
+			a.mode = ModeAddFolder
+			a.modal.TitleInput.Reset()
+			a.modal.TitleInput.Focus()
+			return a, a.modal.TitleInput.Focus()
+		}
+
 		// Handle pinned pane navigation
 		if a.focusedPane == PanePinned {
 			return a.updatePinnedPane(msg)
@@ -875,9 +984,6 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.lastKeyWasG = false
 
 		switch {
-		case key.Matches(msg, a.keys.Quit):
-			return a, tea.Quit
-
 		case key.Matches(msg, a.keys.Down):
 			displayItems := a.getDisplayItems()
 			if len(displayItems) > 0 && a.browser.Cursor < len(displayItems)-1 {
@@ -947,54 +1053,6 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, a.keys.PasteBefore):
 			a.pasteItem(true) // before cursor
 
-		case key.Matches(msg, a.keys.AddBookmark):
-			a.mode = ModeAddBookmark
-			a.modal.TitleInput.Reset()
-			a.modal.URLInput.Reset()
-			a.modal.TitleInput.Focus()
-			return a, a.modal.TitleInput.Focus()
-
-		case key.Matches(msg, a.keys.AddFolder):
-			a.mode = ModeAddFolder
-			a.modal.TitleInput.Reset()
-			a.modal.TitleInput.Focus()
-			return a, a.modal.TitleInput.Focus()
-
-		case key.Matches(msg, a.keys.QuickAdd):
-			// AI-powered quick add
-			a.mode = ModeQuickAdd
-			a.quickAdd.Reset()
-			// Pre-fill with clipboard contents
-			if clipContent, err := clipboard.ReadAll(); err == nil && clipContent != "" {
-				a.quickAdd.Input.SetValue(clipContent)
-			}
-			a.quickAdd.Input.Focus()
-			return a, a.quickAdd.Input.Focus()
-
-		case key.Matches(msg, a.keys.ReadLater):
-			// Quick add to Read Later from clipboard
-			clipContent, err := clipboard.ReadAll()
-			if err != nil {
-				cmd := a.setMessage(MessageError, "Failed to read clipboard")
-				return a, cmd
-			}
-			clipContent = strings.TrimSpace(clipContent)
-			if clipContent == "" {
-				cmd := a.setMessage(MessageError, "No URL in clipboard")
-				return a, cmd
-			}
-			// Validate URL
-			parsedURL, err := url.Parse(clipContent)
-			if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
-				cmd := a.setMessage(MessageError, "Invalid URL in clipboard")
-				return a, cmd
-			}
-			// Start AI-powered quick add to Read Later
-			a.readLaterURL = clipContent
-			a.mode = ModeReadLaterLoading
-			cmd := a.setMessage(MessageInfo, "Adding to "+a.config.QuickAddFolder+"...")
-			return a, tea.Batch(cmd, a.callAICmd(clipContent))
-
 		case key.Matches(msg, a.keys.Edit):
 			// Only edit if there's an item selected
 			displayItems := a.getDisplayItems()
@@ -1048,64 +1106,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.browser.SortMode = (a.browser.SortMode + 1) % 4
 			a.refreshItems()
 
-		case key.Matches(msg, a.keys.ToggleConfirm):
-			// Toggle delete confirmation
-			a.confirmDelete = !a.confirmDelete
-
-		case key.Matches(msg, a.keys.Search):
-			// Open fuzzy finder mode with GLOBAL search
-			a.mode = ModeSearch
-			a.search.Input.Reset()
-			a.search.Input.Focus()
-			a.search.FuzzyCursor = 0
-			// Gather ALL items from the entire store for fuzzy matching
-			a.search.AllItems = []Item{}
-			for i := range a.store.Folders {
-				a.search.AllItems = append(a.search.AllItems, Item{
-					Kind:   ItemFolder,
-					Folder: &a.store.Folders[i],
-				})
-			}
-			for i := range a.store.Bookmarks {
-				a.search.AllItems = append(a.search.AllItems, Item{
-					Kind:     ItemBookmark,
-					Bookmark: &a.store.Bookmarks[i],
-				})
-			}
-			a.updateFuzzyMatches()
-			return a, a.search.Input.Focus()
-
-		case key.Matches(msg, a.keys.Filter):
-			// Open local filter for current folder
-			a.mode = ModeFilter
-			a.search.FilterInput.Reset()
-			a.search.FilterInput.SetValue(a.search.FilterQuery) // Restore previous filter
-			a.search.FilterInput.Focus()
-			return a, a.search.FilterInput.Focus()
-
 		case key.Matches(msg, a.keys.YankURL):
 			// Yank URL to clipboard
 			return a.yankURLToClipboard()
 
-		case key.Matches(msg, a.keys.Help):
-			// Toggle help overlay
-			a.mode = ModeHelp
-			return a, nil
-
-		case key.Matches(msg, a.keys.Cull):
-			// Check if cache exists
-			a.checkCullCache()
-			if a.cull.HasCache {
-				// Show menu to choose fresh vs cached
-				a.cull.MenuCursor = 0
-				a.mode = ModeCullMenu
-				return a, nil
-			}
-			// No cache - go directly to loading
-			a.cull.Reset()
-			a.cull.Total = len(a.store.Bookmarks)
-			a.mode = ModeCullLoading
-			return a, a.startCullCmd()
 		}
 	}
 
@@ -1149,9 +1153,6 @@ func (a App) updatePinnedPane(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	a.lastKeyWasG = false
 
 	switch {
-	case key.Matches(msg, a.keys.Quit):
-		return a, tea.Quit
-
 	case key.Matches(msg, a.keys.Down):
 		if len(a.pinnedItems) > 0 && a.pinnedCursor < len(a.pinnedItems)-1 {
 			a.pinnedCursor++
@@ -1175,10 +1176,6 @@ func (a App) updatePinnedPane(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, a.keys.Left):
 		// Already at leftmost pane, do nothing
-		return a, nil
-
-	case key.Matches(msg, a.keys.Help):
-		a.mode = ModeHelp
 		return a, nil
 	}
 
