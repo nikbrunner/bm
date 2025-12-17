@@ -1826,7 +1826,7 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return a, nil
 			case "o":
 				return a.sortOpenCurrent()
-			case "e":
+			case "m":
 				return a.sortEditCurrent()
 			case "d":
 				return a.sortDeleteCurrent()

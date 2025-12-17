@@ -418,7 +418,7 @@ func (a App) getSortResultsHints() HintSet {
 			{Key: "Enter", Desc: "accept"},
 			{Key: "s", Desc: "skip"},
 			{Key: "o", Desc: "open"},
-			{Key: "e", Desc: "edit"},
+			{Key: "m", Desc: "move"},
 			{Key: "d", Desc: "del"},
 		},
 		System: []Hint{
