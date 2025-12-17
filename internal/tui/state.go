@@ -63,6 +63,8 @@ type MoveState struct {
 	FilteredFolders []string        // Filtered folder paths based on search
 	FolderIdx       int             // Selected folder index in filtered list
 	ItemsToMove     []Item          // Items to move (for batch operations)
+	ReturnMode      Mode            // Mode to return to after move (0 = ModeNormal)
+	SortSuggestion  *SortSuggestion // If set, mark as processed after move
 }
 
 // NewMoveState creates a new MoveState with initialized input.
@@ -83,6 +85,8 @@ func (m *MoveState) Reset() {
 	m.FilteredFolders = nil
 	m.FolderIdx = 0
 	m.ItemsToMove = nil
+	m.ReturnMode = 0 // ModeNormal
+	m.SortSuggestion = nil
 }
 
 // SearchState holds state for global search and local filtering.

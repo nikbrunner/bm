@@ -1777,15 +1777,35 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if a.mode == ModeMove {
 		switch msg.Type {
 		case tea.KeyEsc:
-			// Cancel move
-			a.mode = ModeNormal
+			// Cancel move - return to appropriate mode
+			if a.move.ReturnMode != 0 {
+				a.mode = a.move.ReturnMode
+			} else {
+				a.mode = ModeNormal
+			}
 			return a, nil
 		case tea.KeyEnter:
 			// Execute move if there are filtered results
 			if len(a.move.FilteredFolders) > 0 {
 				a.executeMoveItem()
 			}
-			a.mode = ModeNormal
+			// Mark sort suggestion as processed if coming from sort
+			if a.move.SortSuggestion != nil {
+				a.move.SortSuggestion.Processed = true
+				// Check if there are more suggestions
+				if a.sort.UnprocessedCount() == 0 {
+					a.mode = ModeNormal
+					a.refreshItems()
+					a.sort.Reset()
+				} else {
+					a.mode = ModeSortResults
+					a.sortNextUnprocessed()
+				}
+			} else if a.move.ReturnMode != 0 {
+				a.mode = a.move.ReturnMode
+			} else {
+				a.mode = ModeNormal
+			}
 			return a, nil
 		case tea.KeyUp, tea.KeyCtrlP:
 			if a.move.FolderIdx > 0 {
@@ -3642,6 +3662,8 @@ func (a *App) sortEditCurrent() (tea.Model, tea.Cmd) {
 	a.move.FilteredFolders = a.move.Folders
 	a.move.FolderIdx = a.findMoveFolderIndex(sug.SuggestedPath)
 	a.move.FilterInput.Focus()
+	a.move.ReturnMode = ModeSortResults
+	a.move.SortSuggestion = sug
 
 	a.mode = ModeMove
 	return a, nil
