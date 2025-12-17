@@ -361,7 +361,7 @@ func (a App) getCullResultsHints() HintSet {
 			{Key: "d", Desc: "del all"},
 		},
 		System: []Hint{
-			{Key: "q/Esc", Desc: "quit"},
+			{Key: "Esc", Desc: "back"},
 		},
 	}
 }
@@ -394,7 +394,7 @@ func (a App) getOrganizeMenuHints() HintSet {
 			{Key: "Enter", Desc: "select"},
 		},
 		System: []Hint{
-			{Key: "q/Esc", Desc: "quit"},
+			{Key: "Esc", Desc: "back"},
 		},
 	}
 }
@@ -422,7 +422,7 @@ func (a App) getOrganizeResultsHints() HintSet {
 			{Key: "d", Desc: "del"},
 		},
 		System: []Hint{
-			{Key: "q/Esc", Desc: "quit"},
+			{Key: "Esc", Desc: "back"},
 		},
 	}
 }

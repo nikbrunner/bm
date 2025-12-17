@@ -126,6 +126,16 @@ func (m Mode) hasTextInput() bool {
 	return false
 }
 
+// isModalView returns true if the mode is a modal view where 'q' should go back, not quit the app.
+func (m Mode) isModalView() bool {
+	switch m {
+	case ModeCullMenu, ModeCullResults, ModeCullInspect,
+		ModeOrganizeMenu, ModeOrganizeResults:
+		return true
+	}
+	return false
+}
+
 // SortMode represents the current sort mode.
 type SortMode int
 
@@ -863,8 +873,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case tea.KeyMsg:
-		// Handle q to quit globally (except when in text input mode)
-		if key.Matches(msg, a.keys.Quit) && !a.mode.hasTextInput() {
+		// Handle q to quit globally (except when in text input mode or modal views)
+		if key.Matches(msg, a.keys.Quit) && !a.mode.hasTextInput() && !a.mode.isModalView() {
 			return a, tea.Quit
 		}
 
