@@ -1,25 +1,25 @@
-                                                                                           
-   /Development                                                                            
-  ┏━━━━━━━━━━━━━━━━━━━━━━━━┓┏━━━━━━━━━━━━━━━━━━━━━━━━┓┏━━━━━━━━━━━━━━━━━━━━━━━━┓           
-  ┃  Development/          ┃┃  Go/                   ┃┃ (empty folder)         ┃           
-  ┃  Tools/                ┃┃  Go Docs               ┃┃                        ┃           
-  ┃  GitHub                ┃┃                        ┃┃                        ┃           
-  ┃                        ┃┃                        ┃┃                        ┃           
-  ┃                        ┃┃                        ┃┃                        ┃           
-  ┃                        ┃┃                        ┃┃                        ┃           
-  ┃                        ┃┃                        ┃┃                        ┃           
-  ┃                        ┃┃                        ┃┃                        ┃           
-  ┃                        ┃┃                        ┃┃                        ┃           
-  ┃                        ┃┃                        ┃┃                        ┃           
-  ┃                        ┃┃                        ┃┃                        ┃           
-  ┃                        ┃┃                        ┃┃                        ┃           
-  ┃                        ┃┃                        ┃┃                        ┃           
-  ┃                        ┃┃                        ┃┃                        ┃           
-  ┃                        ┃┃                        ┃┃                        ┃           
-  ┃                        ┃┃                        ┃┃                        ┃           
-  ┃                        ┃┃                        ┃┃                        ┃           
-  ┗━━━━━━━━━━━━━━━━━━━━━━━━┛┗━━━━━━━━━━━━━━━━━━━━━━━━┛┗━━━━━━━━━━━━━━━━━━━━━━━━┛           
-                                                                                           
-  [ord:man] [cfm:on]                                                                       
-  Local  j/k:move h:back l:open *:pin m:move v/V:select y:yank d:del x:cut p:paste e:edit  
-  Global s:search /:filter i:AI add L:read later a/A:add C:cull ?:help q:quit              
+                                                                                                  
+   /Development                                                                                   
+  ┏━━━━━━━━━━━━━━━━━━━━━━━━┓┏━━━━━━━━━━━━━━━━━━━━━━━━┓┏━━━━━━━━━━━━━━━━━━━━━━━━┓                  
+  ┃  Development/          ┃┃  Go/                   ┃┃ (empty folder)         ┃                  
+  ┃  Tools/                ┃┃  Go Docs               ┃┃                        ┃                  
+  ┃  GitHub                ┃┃                        ┃┃                        ┃                  
+  ┃                        ┃┃                        ┃┃                        ┃                  
+  ┃                        ┃┃                        ┃┃                        ┃                  
+  ┃                        ┃┃                        ┃┃                        ┃                  
+  ┃                        ┃┃                        ┃┃                        ┃                  
+  ┃                        ┃┃                        ┃┃                        ┃                  
+  ┃                        ┃┃                        ┃┃                        ┃                  
+  ┃                        ┃┃                        ┃┃                        ┃                  
+  ┃                        ┃┃                        ┃┃                        ┃                  
+  ┃                        ┃┃                        ┃┃                        ┃                  
+  ┃                        ┃┃                        ┃┃                        ┃                  
+  ┃                        ┃┃                        ┃┃                        ┃                  
+  ┃                        ┃┃                        ┃┃                        ┃                  
+  ┃                        ┃┃                        ┃┃                        ┃                  
+  ┃                        ┃┃                        ┃┃                        ┃                  
+  ┗━━━━━━━━━━━━━━━━━━━━━━━━┛┗━━━━━━━━━━━━━━━━━━━━━━━━┛┗━━━━━━━━━━━━━━━━━━━━━━━━┛                  
+                                                                                                  
+  [ord:man] [cfm:on]                                                                              
+  Local  j/k:move h:back l:open *:pin m:move S:sort v/V:select y:yank d:del x:cut p:paste e:edit  
+  Global s:search /:filter i:AI add L:read later a/A:add C:cull ?:help q:quit                     
