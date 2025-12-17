@@ -331,6 +331,9 @@ type SortState struct {
 	Cursor         int              // Current selection in suggestions list
 	Progress       int              // Items analyzed so far
 	Total          int              // Total items to analyze
+	MenuCursor     int              // Cursor for sort menu (0=fresh, 1=cached)
+	CacheTime      time.Time        // When cache was created
+	HasCache       bool             // Whether cache file exists
 }
 
 // SortSuggestion represents a suggested relocation for an item.
@@ -347,7 +350,7 @@ func NewSortState() SortState {
 	return SortState{}
 }
 
-// Reset clears all sort state.
+// Reset clears all sort state except cache info.
 func (s *SortState) Reset() {
 	s.SourceFolderID = nil
 	s.SourceItem = nil
@@ -355,6 +358,8 @@ func (s *SortState) Reset() {
 	s.Cursor = 0
 	s.Progress = 0
 	s.Total = 0
+	s.MenuCursor = 0
+	// Note: HasCache and CacheTime are preserved
 }
 
 // CurrentSuggestion returns the currently selected suggestion, or nil if none.

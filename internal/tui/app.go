@@ -42,6 +42,21 @@ type CullCacheResult struct {
 	Error      string `json:"error"`
 }
 
+// SortCache represents the cached sort results for disk persistence.
+type SortCache struct {
+	Timestamp time.Time         `json:"timestamp"`
+	Results   []SortCacheResult `json:"results"`
+}
+
+// SortCacheResult is a serializable version of SortSuggestion.
+type SortCacheResult struct {
+	ItemID        string `json:"itemId"`
+	IsFolder      bool   `json:"isFolder"`
+	CurrentPath   string `json:"currentPath"`
+	SuggestedPath string `json:"suggestedPath"`
+	IsNewFolder   bool   `json:"isNewFolder"`
+}
+
 // aiResponseMsg is sent when the AI API call completes.
 type aiResponseMsg struct {
 	response *ai.Response
@@ -90,6 +105,7 @@ const (
 	ModeCullLoading          // Checking URLs, show progress
 	ModeCullResults          // Group list view for cull results
 	ModeCullInspect          // Bookmark list within a cull group
+	ModeSortMenu             // Menu to choose fresh vs cached sort
 	ModeSortLoading          // Analyzing items for sort suggestions
 	ModeSortResults          // List of suggested moves
 )
@@ -709,6 +725,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case sortResultsMsg:
 		a.sort.Suggestions = msg.suggestions
+		// Save cache for future use
+		if len(msg.suggestions) > 0 {
+			_ = a.saveSortCache(msg.suggestions)
+			a.sort.HasCache = true
+			a.sort.CacheTime = time.Now()
+		}
 		if len(msg.suggestions) == 0 {
 			a.mode = ModeNormal
 			a.setStatus("All items already well-organized!")
@@ -1585,6 +1607,66 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				if a.cull.MenuCursor > 0 {
 					a.cull.MenuCursor--
 				}
+				return a, nil
+			}
+		}
+		return a, nil
+	}
+
+	// Handle sort menu mode
+	if a.mode == ModeSortMenu {
+		switch msg.Type {
+		case tea.KeyEsc:
+			a.mode = ModeNormal
+			return a, nil
+		case tea.KeyEnter:
+			if a.sort.MenuCursor == 0 {
+				// Fresh analysis
+				return a.startSortAnalysis()
+			} else {
+				// Use cached results
+				suggestions, _, err := a.loadSortCache()
+				if err != nil {
+					a.setMessage(MessageError, "Cache load failed: "+err.Error())
+					a.mode = ModeNormal
+					return a, nil
+				}
+				a.sort.Suggestions = suggestions
+				a.sort.Cursor = 0
+				if len(suggestions) == 0 {
+					a.mode = ModeNormal
+					a.setStatus("All items already well-organized!")
+				} else {
+					a.mode = ModeSortResults
+				}
+			}
+			return a, nil
+		case tea.KeyDown:
+			if a.sort.MenuCursor < 1 {
+				a.sort.MenuCursor++
+			}
+			return a, nil
+		case tea.KeyUp:
+			if a.sort.MenuCursor > 0 {
+				a.sort.MenuCursor--
+			}
+			return a, nil
+		}
+		// Handle vim-style navigation
+		if msg.Type == tea.KeyRunes {
+			switch string(msg.Runes) {
+			case "j":
+				if a.sort.MenuCursor < 1 {
+					a.sort.MenuCursor++
+				}
+				return a, nil
+			case "k":
+				if a.sort.MenuCursor > 0 {
+					a.sort.MenuCursor--
+				}
+				return a, nil
+			case "q":
+				a.mode = ModeNormal
 				return a, nil
 			}
 		}
@@ -3227,6 +3309,139 @@ func (a *App) countCachedProblems() int {
 	return len(results)
 }
 
+// sortCachePath returns the path to the sort cache file.
+func sortCachePath() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(homeDir, ".config", "bm", "sort-cache.json"), nil
+}
+
+// saveSortCache saves sort suggestions to disk.
+func (a *App) saveSortCache(suggestions []SortSuggestion) error {
+	path, err := sortCachePath()
+	if err != nil {
+		return err
+	}
+
+	// Convert to serializable format
+	cacheResults := make([]SortCacheResult, 0, len(suggestions))
+	for _, s := range suggestions {
+		var itemID string
+		var isFolder bool
+		if s.Item.IsFolder() {
+			itemID = s.Item.Folder.ID
+			isFolder = true
+		} else {
+			itemID = s.Item.Bookmark.ID
+			isFolder = false
+		}
+		cacheResults = append(cacheResults, SortCacheResult{
+			ItemID:        itemID,
+			IsFolder:      isFolder,
+			CurrentPath:   s.CurrentPath,
+			SuggestedPath: s.SuggestedPath,
+			IsNewFolder:   s.IsNewFolder,
+		})
+	}
+
+	cache := SortCache{
+		Timestamp: time.Now(),
+		Results:   cacheResults,
+	}
+
+	data, err := json.MarshalIndent(cache, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(path, data, 0644)
+}
+
+// loadSortCache loads sort suggestions from disk and matches with current items.
+func (a *App) loadSortCache() ([]SortSuggestion, time.Time, error) {
+	path, err := sortCachePath()
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+
+	var cache SortCache
+	if err := json.Unmarshal(data, &cache); err != nil {
+		return nil, time.Time{}, err
+	}
+
+	// Build maps for fast lookup
+	bookmarkMap := make(map[string]*model.Bookmark)
+	for i := range a.store.Bookmarks {
+		bookmarkMap[a.store.Bookmarks[i].ID] = &a.store.Bookmarks[i]
+	}
+	folderMap := make(map[string]*model.Folder)
+	for i := range a.store.Folders {
+		folderMap[a.store.Folders[i].ID] = &a.store.Folders[i]
+	}
+
+	// Convert back to SortSuggestion, skipping missing items
+	suggestions := make([]SortSuggestion, 0, len(cache.Results))
+	for _, cr := range cache.Results {
+		var item Item
+		if cr.IsFolder {
+			folder, exists := folderMap[cr.ItemID]
+			if !exists {
+				continue // Folder was deleted
+			}
+			item = Item{Kind: ItemFolder, Folder: folder}
+		} else {
+			bookmark, exists := bookmarkMap[cr.ItemID]
+			if !exists {
+				continue // Bookmark was deleted
+			}
+			item = Item{Kind: ItemBookmark, Bookmark: bookmark}
+		}
+		suggestions = append(suggestions, SortSuggestion{
+			Item:          item,
+			CurrentPath:   cr.CurrentPath,
+			SuggestedPath: cr.SuggestedPath,
+			IsNewFolder:   cr.IsNewFolder,
+			Processed:     false,
+		})
+	}
+
+	return suggestions, cache.Timestamp, nil
+}
+
+// checkSortCache checks if a cache file exists and updates state.
+func (a *App) checkSortCache() {
+	path, err := sortCachePath()
+	if err != nil {
+		a.sort.HasCache = false
+		return
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		a.sort.HasCache = false
+		return
+	}
+
+	a.sort.HasCache = true
+	a.sort.CacheTime = info.ModTime()
+}
+
+// countCachedSortSuggestions returns the count of suggestions in cache.
+func (a *App) countCachedSortSuggestions() int {
+	suggestions, _, err := a.loadSortCache()
+	if err != nil {
+		return 0
+	}
+	return len(suggestions)
+}
+
 // groupCullResults groups cull results by status and error type.
 func (a *App) groupCullResults(results []culler.Result) []CullGroup {
 	// Map to collect results by group key
@@ -3436,6 +3651,20 @@ func (a *App) startSort() (tea.Model, tea.Cmd) {
 	}
 	_ = client // Will be used in the command
 
+	// Check for cache
+	a.checkSortCache()
+	if a.sort.HasCache {
+		a.sort.MenuCursor = 0
+		a.mode = ModeSortMenu
+		return a, nil
+	}
+
+	// No cache - start fresh analysis
+	return a.startSortAnalysis()
+}
+
+// startSortAnalysis begins the AI-powered sort analysis.
+func (a *App) startSortAnalysis() (tea.Model, tea.Cmd) {
 	// Get the current item
 	displayItems := a.getDisplayItems()
 	if len(displayItems) == 0 || a.browser.Cursor >= len(displayItems) {

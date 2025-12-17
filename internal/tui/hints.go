@@ -117,6 +117,8 @@ func (a App) getContextualHints() HintSet {
 		return a.getCullResultsHints()
 	case ModeCullInspect:
 		return a.getCullInspectHints()
+	case ModeSortMenu:
+		return a.getSortMenuHints()
 	case ModeSortLoading:
 		return a.getSortLoadingHints()
 	case ModeSortResults:
@@ -378,6 +380,21 @@ func (a App) getCullInspectHints() HintSet {
 		},
 		System: []Hint{
 			{Key: "Esc", Desc: "back"},
+		},
+	}
+}
+
+// getSortMenuHints returns hints for ModeSortMenu.
+func (a App) getSortMenuHints() HintSet {
+	return HintSet{
+		Nav: []Hint{
+			{Key: "j/k", Desc: "move"},
+		},
+		Action: []Hint{
+			{Key: "Enter", Desc: "select"},
+		},
+		System: []Hint{
+			{Key: "q/Esc", Desc: "quit"},
 		},
 	}
 }

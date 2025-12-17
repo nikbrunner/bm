@@ -318,6 +318,8 @@ func (a App) renderModal() string {
 	case ModeCullInspect:
 		return a.renderCullInspect()
 
+	case ModeSortMenu:
+		return a.renderSortMenu()
 	case ModeSortLoading:
 		return a.renderSortLoading()
 	case ModeSortResults:
@@ -1093,6 +1095,63 @@ func (a App) renderCullMenu() string {
 		}
 		line := opt
 		if i == a.cull.MenuCursor {
+			// Pad for selection highlight
+			padded := line
+			for len(padded) < modalWidth-8 {
+				padded += " "
+			}
+			content.WriteString(a.styles.ItemSelected.Render("▸ " + padded))
+		} else {
+			content.WriteString("  " + line)
+		}
+		content.WriteString("\n")
+	}
+
+	modal := lipgloss.Place(
+		a.width,
+		a.height-3,
+		lipgloss.Center,
+		lipgloss.Center,
+		modalStyle.Render(content.String()),
+	)
+
+	return lipgloss.JoinVertical(lipgloss.Left, modal, a.renderHelpBar())
+}
+
+// renderSortMenu renders the menu to choose between fresh or cached sort.
+func (a App) renderSortMenu() string {
+	modalWidth := layout.CalculateModalWidth(a.width, a.layoutConfig.Modal.DefaultWidthPercent, a.layoutConfig.Modal)
+
+	accent := lipgloss.AdaptiveColor{Light: "#6B8E23", Dark: "#9ACD32"}
+	modalStyle := lipgloss.NewStyle().
+		Border(lipgloss.ThickBorder()).
+		BorderForeground(accent).
+		Padding(1, 2).
+		Width(modalWidth)
+
+	var content strings.Builder
+	content.WriteString(a.styles.Title.Render("Auto-Sort"))
+	content.WriteString("\n\n")
+
+	// Menu options
+	options := []string{
+		"Run fresh analysis",
+		"",
+	}
+
+	// Format cached option with age and count
+	if a.sort.HasCache {
+		age := formatTimeAgo(a.sort.CacheTime)
+		count := a.countCachedSortSuggestions()
+		options[1] = fmt.Sprintf("Use cached results (%s, %d items)", age, count)
+	}
+
+	for i, opt := range options {
+		if opt == "" {
+			continue // Skip empty
+		}
+		line := opt
+		if i == a.sort.MenuCursor {
 			// Pad for selection highlight
 			padded := line
 			for len(padded) < modalWidth-8 {
