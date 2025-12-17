@@ -318,6 +318,11 @@ func (a App) renderModal() string {
 	case ModeCullInspect:
 		return a.renderCullInspect()
 
+	case ModeSortLoading:
+		return a.renderSortLoading()
+	case ModeSortResults:
+		return a.renderSortResults()
+
 	case ModeMove:
 		// Get item being moved
 		displayItems := a.getDisplayItems()
@@ -1297,6 +1302,133 @@ func (a App) renderCullInspect() string {
 				content.WriteString("\n")
 				content.WriteString(a.styles.Empty.Render("  " + urlLine))
 				content.WriteString("\n")
+			}
+		}
+	}
+
+	modal := lipgloss.Place(
+		a.width,
+		a.height-3,
+		lipgloss.Center,
+		lipgloss.Center,
+		modalStyle.Render(content.String()),
+	)
+
+	return lipgloss.JoinVertical(lipgloss.Left, modal, a.renderHelpBar())
+}
+
+// renderSortLoading renders the loading screen during AI analysis.
+func (a App) renderSortLoading() string {
+	modalWidth := layout.CalculateModalWidth(a.width, a.layoutConfig.Modal.DefaultWidthPercent, a.layoutConfig.Modal)
+
+	accent := lipgloss.AdaptiveColor{Light: "#6B8E23", Dark: "#9ACD32"}
+	modalStyle := lipgloss.NewStyle().
+		Border(lipgloss.ThickBorder()).
+		BorderForeground(accent).
+		Padding(1, 2).
+		Width(modalWidth)
+
+	var content strings.Builder
+	content.WriteString(a.styles.Title.Render("Auto-Sort"))
+	content.WriteString("\n\n")
+	content.WriteString(fmt.Sprintf("Analyzing %d items...\n\n", a.sort.Total))
+
+	// Progress bar
+	if a.sort.Total > 0 {
+		progress := float64(a.sort.Progress) / float64(a.sort.Total)
+		barWidth := modalWidth - 10
+		filled := int(progress * float64(barWidth))
+		empty := barWidth - filled
+
+		bar := strings.Repeat("█", filled) + strings.Repeat("░", empty)
+		content.WriteString(bar + "\n\n")
+		content.WriteString(fmt.Sprintf("[%d/%d]", a.sort.Progress, a.sort.Total))
+	}
+
+	modal := lipgloss.Place(
+		a.width,
+		a.height-3,
+		lipgloss.Center,
+		lipgloss.Center,
+		modalStyle.Render(content.String()),
+	)
+
+	return lipgloss.JoinVertical(lipgloss.Left, modal, a.renderHelpBar())
+}
+
+// renderSortResults renders the list of suggested moves.
+func (a App) renderSortResults() string {
+	modalWidth := layout.CalculateModalWidth(a.width, a.layoutConfig.Modal.LargeWidthPercent, a.layoutConfig.Modal)
+
+	accent := lipgloss.AdaptiveColor{Light: "#6B8E23", Dark: "#9ACD32"}
+	modalStyle := lipgloss.NewStyle().
+		Border(lipgloss.ThickBorder()).
+		BorderForeground(accent).
+		Padding(1, 2).
+		Width(modalWidth)
+
+	var content strings.Builder
+
+	unprocessed := a.sort.UnprocessedCount()
+	title := fmt.Sprintf("Auto-Sort Results (%d to move)", unprocessed)
+	content.WriteString(a.styles.Title.Render(title))
+	content.WriteString("\n\n")
+
+	if len(a.sort.Suggestions) == 0 {
+		content.WriteString(a.styles.Empty.Render("All items already well-organized!"))
+	} else {
+		// Filter to unprocessed suggestions for display
+		var visibleSuggestions []int
+		for i, sug := range a.sort.Suggestions {
+			if !sug.Processed {
+				visibleSuggestions = append(visibleSuggestions, i)
+			}
+		}
+
+		maxVisible := 8
+		itemWidth := modalWidth - 6
+
+		// Find cursor position in visible list
+		cursorVisibleIdx := 0
+		for i, idx := range visibleSuggestions {
+			if idx == a.sort.Cursor {
+				cursorVisibleIdx = i
+				break
+			}
+		}
+
+		start, end := layout.CalculateVisibleListItems(maxVisible, cursorVisibleIdx, len(visibleSuggestions))
+
+		for vi := start; vi < end; vi++ {
+			idx := visibleSuggestions[vi]
+			sug := a.sort.Suggestions[idx]
+			isSelected := idx == a.sort.Cursor
+
+			// Title line
+			titleLine := sug.Item.Title()
+			if len(titleLine) > itemWidth-2 {
+				titleLine = titleLine[:itemWidth-5] + "..."
+			}
+
+			// Path line: /Current -> /Suggested
+			pathLine := sug.CurrentPath + " -> " + sug.SuggestedPath
+			if sug.IsNewFolder {
+				pathLine += " (new)"
+			}
+			if len(pathLine) > itemWidth-4 {
+				pathLine = pathLine[:itemWidth-7] + "..."
+			}
+
+			if isSelected {
+				content.WriteString(a.styles.ItemSelected.Render("> " + titleLine))
+				content.WriteString("\n")
+				content.WriteString(a.styles.URL.Render("  " + pathLine))
+				content.WriteString("\n\n")
+			} else {
+				content.WriteString("  " + titleLine)
+				content.WriteString("\n")
+				content.WriteString(a.styles.Empty.Render("  " + pathLine))
+				content.WriteString("\n\n")
 			}
 		}
 	}
