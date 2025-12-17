@@ -117,12 +117,12 @@ func (a App) getContextualHints() HintSet {
 		return a.getCullResultsHints()
 	case ModeCullInspect:
 		return a.getCullInspectHints()
-	case ModeSortMenu:
-		return a.getSortMenuHints()
-	case ModeSortLoading:
-		return a.getSortLoadingHints()
-	case ModeSortResults:
-		return a.getSortResultsHints()
+	case ModeOrganizeMenu:
+		return a.getOrganizeMenuHints()
+	case ModeOrganizeLoading:
+		return a.getOrganizeLoadingHints()
+	case ModeOrganizeResults:
+		return a.getOrganizeResultsHints()
 	default:
 		return HintSet{}
 	}
@@ -147,7 +147,7 @@ func (a App) getNormalModeHints() HintSet {
 		Action: []Hint{
 			{Key: "*", Desc: "pin"},
 			{Key: "m", Desc: "move"},
-			{Key: "S", Desc: "sort"},
+			{Key: "O", Desc: "organize"},
 			{Key: "v/V", Desc: "select"},
 		},
 	}
@@ -384,8 +384,8 @@ func (a App) getCullInspectHints() HintSet {
 	}
 }
 
-// getSortMenuHints returns hints for ModeSortMenu.
-func (a App) getSortMenuHints() HintSet {
+// getOrganizeMenuHints returns hints for ModeOrganizeMenu.
+func (a App) getOrganizeMenuHints() HintSet {
 	return HintSet{
 		Nav: []Hint{
 			{Key: "j/k", Desc: "move"},
@@ -399,8 +399,8 @@ func (a App) getSortMenuHints() HintSet {
 	}
 }
 
-// getSortLoadingHints returns hints for ModeSortLoading.
-func (a App) getSortLoadingHints() HintSet {
+// getOrganizeLoadingHints returns hints for ModeOrganizeLoading.
+func (a App) getOrganizeLoadingHints() HintSet {
 	return HintSet{
 		System: []Hint{
 			{Key: "Esc", Desc: "cancel"},
@@ -408,8 +408,8 @@ func (a App) getSortLoadingHints() HintSet {
 	}
 }
 
-// getSortResultsHints returns hints for ModeSortResults.
-func (a App) getSortResultsHints() HintSet {
+// getOrganizeResultsHints returns hints for ModeOrganizeResults.
+func (a App) getOrganizeResultsHints() HintSet {
 	return HintSet{
 		Nav: []Hint{
 			{Key: "j/k", Desc: "move"},

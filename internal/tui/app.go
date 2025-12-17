@@ -26,7 +26,7 @@ import (
 
 // Package-level atomic counter for cull progress (bubbletea models are immutable)
 var cullProgressCounter int64
-var sortProgressCounter int64
+var organizeProgressCounter int64
 
 // CullCache represents the cached cull results for disk persistence.
 type CullCache struct {
@@ -42,19 +42,21 @@ type CullCacheResult struct {
 	Error      string `json:"error"`
 }
 
-// SortCache represents the cached sort results for disk persistence.
-type SortCache struct {
-	Timestamp time.Time         `json:"timestamp"`
-	Results   []SortCacheResult `json:"results"`
+// OrganizeCache represents the cached organize results for disk persistence.
+type OrganizeCache struct {
+	Timestamp time.Time              `json:"timestamp"`
+	Results   []OrganizeCacheResult  `json:"results"`
 }
 
-// SortCacheResult is a serializable version of SortSuggestion.
-type SortCacheResult struct {
-	ItemID        string `json:"itemId"`
-	IsFolder      bool   `json:"isFolder"`
-	CurrentPath   string `json:"currentPath"`
-	SuggestedPath string `json:"suggestedPath"`
-	IsNewFolder   bool   `json:"isNewFolder"`
+// OrganizeCacheResult is a serializable version of OrganizeSuggestion.
+type OrganizeCacheResult struct {
+	ItemID        string   `json:"itemId"`
+	IsFolder      bool     `json:"isFolder"`
+	CurrentPath   string   `json:"currentPath"`
+	SuggestedPath string   `json:"suggestedPath"`
+	IsNewFolder   bool     `json:"isNewFolder"`
+	CurrentTags   []string `json:"currentTags"`
+	SuggestedTags []string `json:"suggestedTags"`
 }
 
 // aiResponseMsg is sent when the AI API call completes.
@@ -63,22 +65,22 @@ type aiResponseMsg struct {
 	err      error
 }
 
-// sortResponseMsg is sent when an AI sort suggestion completes.
-type sortResponseMsg struct {
+// organizeResponseMsg is sent when an AI organize suggestion completes.
+type organizeResponseMsg struct {
 	item     Item
-	response *ai.SortResponse
+	response *ai.OrganizeResponse
 	err      error
 }
 
-// sortCompleteMsg is sent when all items have been analyzed.
-type sortCompleteMsg struct{}
+// organizeCompleteMsg is sent when all items have been analyzed.
+type organizeCompleteMsg struct{}
 
-// sortTickMsg is sent periodically to update progress display.
-type sortTickMsg struct{}
+// organizeTickMsg is sent periodically to update progress display.
+type organizeTickMsg struct{}
 
-// sortResultsMsg carries the final suggestions.
-type sortResultsMsg struct {
-	suggestions []SortSuggestion
+// organizeResultsMsg carries the final suggestions.
+type organizeResultsMsg struct {
+	suggestions []OrganizeSuggestion
 }
 
 // Mode represents the current UI mode.
@@ -105,9 +107,9 @@ const (
 	ModeCullLoading          // Checking URLs, show progress
 	ModeCullResults          // Group list view for cull results
 	ModeCullInspect          // Bookmark list within a cull group
-	ModeSortMenu             // Menu to choose fresh vs cached sort
-	ModeSortLoading          // Analyzing items for sort suggestions
-	ModeSortResults          // List of suggested moves
+	ModeOrganizeMenu         // Menu to choose fresh vs cached organize
+	ModeOrganizeLoading      // Analyzing items for organize suggestions
+	ModeOrganizeResults      // List of suggested organization changes
 )
 
 // hasTextInput returns true if the mode has an active text input where 'q' shouldn't quit.
@@ -242,8 +244,8 @@ type App struct {
 	// Cull state
 	cull CullState
 
-	// Sort state
-	sort SortState
+	// Organize state
+	organize OrganizeState
 
 	// Settings
 	confirmDelete bool // true = ask confirmation before delete (default true)
@@ -304,7 +306,7 @@ func NewApp(params AppParams) App {
 		move:          NewMoveState(layoutCfg),
 		selection:     NewSelectionState(),
 		cull:          NewCullState(),
-		sort:          NewSortState(),
+		organize:      NewOrganizeState(),
 		confirmDelete: true,
 		width:         80,
 		height:        24,
@@ -713,31 +715,31 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Continue ticking
 		return a, cullTickCmd()
 
-	case sortTickMsg:
-		if a.mode != ModeSortLoading {
+	case organizeTickMsg:
+		if a.mode != ModeOrganizeLoading {
 			return a, nil
 		}
-		a.sort.Progress = int(atomic.LoadInt64(&sortProgressCounter))
-		if a.sort.Progress < a.sort.Total {
-			return a, sortTickCmd()
+		a.organize.Progress = int(atomic.LoadInt64(&organizeProgressCounter))
+		if a.organize.Progress < a.organize.Total {
+			return a, organizeTickCmd()
 		}
 		return a, nil
 
-	case sortResultsMsg:
-		a.sort.Suggestions = msg.suggestions
+	case organizeResultsMsg:
+		a.organize.Suggestions = msg.suggestions
 		// Save cache for future use
 		if len(msg.suggestions) > 0 {
-			_ = a.saveSortCache(msg.suggestions)
-			a.sort.HasCache = true
-			a.sort.CacheTime = time.Now()
+			_ = a.saveOrganizeCache(msg.suggestions)
+			a.organize.HasCache = true
+			a.organize.CacheTime = time.Now()
 		}
 		if len(msg.suggestions) == 0 {
 			a.mode = ModeNormal
 			a.setStatus("All items already well-organized!")
 			return a, nil
 		}
-		a.sort.Cursor = 0
-		a.mode = ModeSortResults
+		a.organize.Cursor = 0
+		a.mode = ModeOrganizeResults
 		return a, nil
 
 	case cullCompleteMsg:
@@ -956,9 +958,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.mode = ModeCullLoading
 			return a, a.startCullCmd()
 
-		case key.Matches(msg, a.keys.AutoSort):
-			// Auto-sort: analyze current item or folder contents
-			return a.startSort()
+		case key.Matches(msg, a.keys.Organize):
+			// Organize: analyze current item or folder contents
+			return a.startOrganize()
 
 		case key.Matches(msg, a.keys.ToggleConfirm):
 			// Toggle delete confirmation
@@ -1613,42 +1615,42 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, nil
 	}
 
-	// Handle sort menu mode
-	if a.mode == ModeSortMenu {
+	// Handle organize menu mode
+	if a.mode == ModeOrganizeMenu {
 		switch msg.Type {
 		case tea.KeyEsc:
 			a.mode = ModeNormal
 			return a, nil
 		case tea.KeyEnter:
-			if a.sort.MenuCursor == 0 {
+			if a.organize.MenuCursor == 0 {
 				// Fresh analysis
-				return a.startSortAnalysis()
+				return a.startOrganizeAnalysis()
 			} else {
 				// Use cached results
-				suggestions, _, err := a.loadSortCache()
+				suggestions, _, err := a.loadOrganizeCache()
 				if err != nil {
 					a.setMessage(MessageError, "Cache load failed: "+err.Error())
 					a.mode = ModeNormal
 					return a, nil
 				}
-				a.sort.Suggestions = suggestions
-				a.sort.Cursor = 0
+				a.organize.Suggestions = suggestions
+				a.organize.Cursor = 0
 				if len(suggestions) == 0 {
 					a.mode = ModeNormal
 					a.setStatus("All items already well-organized!")
 				} else {
-					a.mode = ModeSortResults
+					a.mode = ModeOrganizeResults
 				}
 			}
 			return a, nil
 		case tea.KeyDown:
-			if a.sort.MenuCursor < 1 {
-				a.sort.MenuCursor++
+			if a.organize.MenuCursor < 1 {
+				a.organize.MenuCursor++
 			}
 			return a, nil
 		case tea.KeyUp:
-			if a.sort.MenuCursor > 0 {
-				a.sort.MenuCursor--
+			if a.organize.MenuCursor > 0 {
+				a.organize.MenuCursor--
 			}
 			return a, nil
 		}
@@ -1656,13 +1658,13 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if msg.Type == tea.KeyRunes {
 			switch string(msg.Runes) {
 			case "j":
-				if a.sort.MenuCursor < 1 {
-					a.sort.MenuCursor++
+				if a.organize.MenuCursor < 1 {
+					a.organize.MenuCursor++
 				}
 				return a, nil
 			case "k":
-				if a.sort.MenuCursor > 0 {
-					a.sort.MenuCursor--
+				if a.organize.MenuCursor > 0 {
+					a.organize.MenuCursor--
 				}
 				return a, nil
 			case "q":
@@ -1684,11 +1686,11 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, nil
 	}
 
-	// Handle sort loading mode
-	if a.mode == ModeSortLoading {
+	// Handle organize loading mode
+	if a.mode == ModeOrganizeLoading {
 		// Only allow Esc to cancel
 		if msg.Type == tea.KeyEsc {
-			a.sort.Reset()
+			a.organize.Reset()
 			a.mode = ModeNormal
 			return a, nil
 		}
@@ -1796,43 +1798,43 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, nil
 	}
 
-	// Handle sort results mode
-	if a.mode == ModeSortResults {
+	// Handle organize results mode
+	if a.mode == ModeOrganizeResults {
 		switch msg.Type {
 		case tea.KeyEsc:
 			a.mode = ModeNormal
-			a.sort.Reset()
+			a.organize.Reset()
 			return a, nil
 		case tea.KeyEnter:
-			return a.sortAcceptCurrent()
+			return a.organizeAcceptCurrent()
 		case tea.KeyDown:
-			a.sortNextUnprocessed()
+			a.organizeNextUnprocessed()
 			return a, nil
 		case tea.KeyUp:
-			a.sortPrevUnprocessed()
+			a.organizePrevUnprocessed()
 			return a, nil
 		}
 		// Handle vim-style navigation and commands
 		if msg.Type == tea.KeyRunes {
 			switch string(msg.Runes) {
 			case "j":
-				a.sortNextUnprocessed()
+				a.organizeNextUnprocessed()
 				return a, nil
 			case "k":
-				a.sortPrevUnprocessed()
+				a.organizePrevUnprocessed()
 				return a, nil
 			case "s":
-				a.sortSkipCurrent()
+				a.organizeSkipCurrent()
 				return a, nil
 			case "o":
-				return a.sortOpenCurrent()
+				return a.organizeOpenCurrent()
 			case "m":
-				return a.sortEditCurrent()
+				return a.organizeMoveCurrent()
 			case "d":
-				return a.sortDeleteCurrent()
+				return a.organizeDeleteCurrent()
 			case "q":
 				a.mode = ModeNormal
-				a.sort.Reset()
+				a.organize.Reset()
 				return a, nil
 			}
 		}
@@ -1871,17 +1873,17 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if len(a.move.FilteredFolders) > 0 {
 				a.executeMoveItem()
 			}
-			// Mark sort suggestion as processed if coming from sort
-			if a.move.SortSuggestion != nil {
-				a.move.SortSuggestion.Processed = true
+			// Mark organize suggestion as processed if coming from organize
+			if a.move.OrganizeSuggestion != nil {
+				a.move.OrganizeSuggestion.Processed = true
 				// Check if there are more suggestions
-				if a.sort.UnprocessedCount() == 0 {
+				if a.organize.UnprocessedCount() == 0 {
 					a.mode = ModeNormal
 					a.refreshItems()
-					a.sort.Reset()
+					a.organize.Reset()
 				} else {
-					a.mode = ModeSortResults
-					a.sortNextUnprocessed()
+					a.mode = ModeOrganizeResults
+					a.organizeNextUnprocessed()
 				}
 			} else if a.move.ReturnMode != 0 {
 				a.mode = a.move.ReturnMode
@@ -3191,10 +3193,10 @@ func cullTickCmd() tea.Cmd {
 	})
 }
 
-// sortTickCmd returns a command that ticks every 100ms to update progress.
-func sortTickCmd() tea.Cmd {
+// organizeTickCmd returns a command that ticks every 100ms to update progress.
+func organizeTickCmd() tea.Cmd {
 	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
-		return sortTickMsg{}
+		return organizeTickMsg{}
 	})
 }
 
@@ -3309,24 +3311,24 @@ func (a *App) countCachedProblems() int {
 	return len(results)
 }
 
-// sortCachePath returns the path to the sort cache file.
-func sortCachePath() (string, error) {
+// organizeCachePath returns the path to the organize cache file.
+func organizeCachePath() (string, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(homeDir, ".config", "bm", "sort-cache.json"), nil
+	return filepath.Join(homeDir, ".config", "bm", "organize-cache.json"), nil
 }
 
-// saveSortCache saves sort suggestions to disk.
-func (a *App) saveSortCache(suggestions []SortSuggestion) error {
-	path, err := sortCachePath()
+// saveOrganizeCache saves organize suggestions to disk.
+func (a *App) saveOrganizeCache(suggestions []OrganizeSuggestion) error {
+	path, err := organizeCachePath()
 	if err != nil {
 		return err
 	}
 
 	// Convert to serializable format
-	cacheResults := make([]SortCacheResult, 0, len(suggestions))
+	cacheResults := make([]OrganizeCacheResult, 0, len(suggestions))
 	for _, s := range suggestions {
 		var itemID string
 		var isFolder bool
@@ -3337,16 +3339,18 @@ func (a *App) saveSortCache(suggestions []SortSuggestion) error {
 			itemID = s.Item.Bookmark.ID
 			isFolder = false
 		}
-		cacheResults = append(cacheResults, SortCacheResult{
+		cacheResults = append(cacheResults, OrganizeCacheResult{
 			ItemID:        itemID,
 			IsFolder:      isFolder,
 			CurrentPath:   s.CurrentPath,
 			SuggestedPath: s.SuggestedPath,
 			IsNewFolder:   s.IsNewFolder,
+			CurrentTags:   s.CurrentTags,
+			SuggestedTags: s.SuggestedTags,
 		})
 	}
 
-	cache := SortCache{
+	cache := OrganizeCache{
 		Timestamp: time.Now(),
 		Results:   cacheResults,
 	}
@@ -3359,9 +3363,9 @@ func (a *App) saveSortCache(suggestions []SortSuggestion) error {
 	return os.WriteFile(path, data, 0644)
 }
 
-// loadSortCache loads sort suggestions from disk and matches with current items.
-func (a *App) loadSortCache() ([]SortSuggestion, time.Time, error) {
-	path, err := sortCachePath()
+// loadOrganizeCache loads organize suggestions from disk and matches with current items.
+func (a *App) loadOrganizeCache() ([]OrganizeSuggestion, time.Time, error) {
+	path, err := organizeCachePath()
 	if err != nil {
 		return nil, time.Time{}, err
 	}
@@ -3371,7 +3375,7 @@ func (a *App) loadSortCache() ([]SortSuggestion, time.Time, error) {
 		return nil, time.Time{}, err
 	}
 
-	var cache SortCache
+	var cache OrganizeCache
 	if err := json.Unmarshal(data, &cache); err != nil {
 		return nil, time.Time{}, err
 	}
@@ -3386,8 +3390,8 @@ func (a *App) loadSortCache() ([]SortSuggestion, time.Time, error) {
 		folderMap[a.store.Folders[i].ID] = &a.store.Folders[i]
 	}
 
-	// Convert back to SortSuggestion, skipping missing items
-	suggestions := make([]SortSuggestion, 0, len(cache.Results))
+	// Convert back to OrganizeSuggestion, skipping missing items
+	suggestions := make([]OrganizeSuggestion, 0, len(cache.Results))
 	for _, cr := range cache.Results {
 		var item Item
 		if cr.IsFolder {
@@ -3403,11 +3407,13 @@ func (a *App) loadSortCache() ([]SortSuggestion, time.Time, error) {
 			}
 			item = Item{Kind: ItemBookmark, Bookmark: bookmark}
 		}
-		suggestions = append(suggestions, SortSuggestion{
+		suggestions = append(suggestions, OrganizeSuggestion{
 			Item:          item,
 			CurrentPath:   cr.CurrentPath,
 			SuggestedPath: cr.SuggestedPath,
 			IsNewFolder:   cr.IsNewFolder,
+			CurrentTags:   cr.CurrentTags,
+			SuggestedTags: cr.SuggestedTags,
 			Processed:     false,
 		})
 	}
@@ -3415,27 +3421,27 @@ func (a *App) loadSortCache() ([]SortSuggestion, time.Time, error) {
 	return suggestions, cache.Timestamp, nil
 }
 
-// checkSortCache checks if a cache file exists and updates state.
-func (a *App) checkSortCache() {
-	path, err := sortCachePath()
+// checkOrganizeCache checks if a cache file exists and updates state.
+func (a *App) checkOrganizeCache() {
+	path, err := organizeCachePath()
 	if err != nil {
-		a.sort.HasCache = false
+		a.organize.HasCache = false
 		return
 	}
 
 	info, err := os.Stat(path)
 	if err != nil {
-		a.sort.HasCache = false
+		a.organize.HasCache = false
 		return
 	}
 
-	a.sort.HasCache = true
-	a.sort.CacheTime = info.ModTime()
+	a.organize.HasCache = true
+	a.organize.CacheTime = info.ModTime()
 }
 
-// countCachedSortSuggestions returns the count of suggestions in cache.
-func (a *App) countCachedSortSuggestions() int {
-	suggestions, _, err := a.loadSortCache()
+// countCachedOrganizeSuggestions returns the count of suggestions in cache.
+func (a *App) countCachedOrganizeSuggestions() int {
+	suggestions, _, err := a.loadOrganizeCache()
 	if err != nil {
 		return 0
 	}
@@ -3641,8 +3647,8 @@ func (a *App) cullMoveItem() (tea.Model, tea.Cmd) {
 	return a, a.move.FilterInput.Focus()
 }
 
-// startSort initiates the AI-powered sort analysis.
-func (a *App) startSort() (tea.Model, tea.Cmd) {
+// startOrganize initiates the AI-powered organize analysis.
+func (a *App) startOrganize() (tea.Model, tea.Cmd) {
 	// Check for API key first
 	client, err := ai.NewClient()
 	if err != nil {
@@ -3652,19 +3658,19 @@ func (a *App) startSort() (tea.Model, tea.Cmd) {
 	_ = client // Will be used in the command
 
 	// Check for cache
-	a.checkSortCache()
-	if a.sort.HasCache {
-		a.sort.MenuCursor = 0
-		a.mode = ModeSortMenu
+	a.checkOrganizeCache()
+	if a.organize.HasCache {
+		a.organize.MenuCursor = 0
+		a.mode = ModeOrganizeMenu
 		return a, nil
 	}
 
 	// No cache - start fresh analysis
-	return a.startSortAnalysis()
+	return a.startOrganizeAnalysis()
 }
 
-// startSortAnalysis begins the AI-powered sort analysis.
-func (a *App) startSortAnalysis() (tea.Model, tea.Cmd) {
+// startOrganizeAnalysis begins the AI-powered organize analysis.
+func (a *App) startOrganizeAnalysis() (tea.Model, tea.Cmd) {
 	// Get the current item
 	displayItems := a.getDisplayItems()
 	if len(displayItems) == 0 || a.browser.Cursor >= len(displayItems) {
@@ -3673,35 +3679,35 @@ func (a *App) startSortAnalysis() (tea.Model, tea.Cmd) {
 	}
 	item := displayItems[a.browser.Cursor]
 
-	// Reset sort state
-	a.sort.Reset()
+	// Reset organize state
+	a.organize.Reset()
 
 	// Collect items to analyze
 	var itemsToAnalyze []Item
 	if item.IsFolder() {
 		// Recursively collect all items in folder
 		itemsToAnalyze = a.collectFolderItemsRecursive(item.Folder.ID)
-		a.sort.SourceFolderID = &item.Folder.ID
+		a.organize.SourceFolderID = &item.Folder.ID
 	} else {
 		itemsToAnalyze = []Item{item}
-		a.sort.SourceItem = &item
+		a.organize.SourceItem = &item
 	}
 
 	if len(itemsToAnalyze) == 0 {
-		cmd := a.setMessage(MessageInfo, "No items to sort")
+		cmd := a.setMessage(MessageInfo, "No items to organize")
 		return a, cmd
 	}
 
-	a.sort.Total = len(itemsToAnalyze)
-	a.mode = ModeSortLoading
+	a.organize.Total = len(itemsToAnalyze)
+	a.mode = ModeOrganizeLoading
 
 	// Reset progress counter
-	atomic.StoreInt64(&sortProgressCounter, 0)
+	atomic.StoreInt64(&organizeProgressCounter, 0)
 
 	// Start analysis
 	return a, tea.Batch(
-		a.analyzeSortItems(itemsToAnalyze),
-		sortTickCmd(),
+		a.analyzeOrganizeItems(itemsToAnalyze),
+		organizeTickCmd(),
 	)
 }
 
@@ -3725,19 +3731,36 @@ func (a *App) collectFolderItemsRecursive(folderID string) []Item {
 	return items
 }
 
-// analyzeSortItems starts the AI analysis for all items.
-func (a *App) analyzeSortItems(items []Item) tea.Cmd {
+// tagsEqual returns true if two tag slices contain the same tags (order-independent).
+func tagsEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	aSet := make(map[string]bool)
+	for _, tag := range a {
+		aSet[tag] = true
+	}
+	for _, tag := range b {
+		if !aSet[tag] {
+			return false
+		}
+	}
+	return true
+}
+
+// analyzeOrganizeItems starts the AI analysis for all items.
+func (a *App) analyzeOrganizeItems(items []Item) tea.Cmd {
 	return func() tea.Msg {
 		client, err := ai.NewClient()
 		if err != nil {
-			return sortCompleteMsg{}
+			return organizeCompleteMsg{}
 		}
 
 		context := ai.BuildContext(a.store)
-		var suggestions []SortSuggestion
+		var suggestions []OrganizeSuggestion
 
 		for i, item := range items {
-			atomic.StoreInt64(&sortProgressCounter, int64(i+1))
+			atomic.StoreInt64(&organizeProgressCounter, int64(i+1))
 
 			var title, url, currentPath string
 			var tags []string
@@ -3755,14 +3778,9 @@ func (a *App) analyzeSortItems(items []Item) tea.Cmd {
 				isFolder = false
 			}
 
-			resp, err := client.SuggestSort(title, url, currentPath, tags, isFolder, context)
+			resp, err := client.SuggestOrganize(title, url, currentPath, tags, isFolder, context)
 			if err != nil {
 				continue // Skip items that fail
-			}
-
-			// Filter out items already in the best place
-			if resp.FolderPath == currentPath {
-				continue
 			}
 
 			// Filter out low confidence suggestions
@@ -3770,106 +3788,144 @@ func (a *App) analyzeSortItems(items []Item) tea.Cmd {
 				continue
 			}
 
-			suggestions = append(suggestions, SortSuggestion{
+			// Check if there are any changes (folder OR tags)
+			folderDiffers := resp.FolderPath != currentPath
+			tagsDiffer := !tagsEqual(tags, resp.SuggestedTags)
+
+			// Skip if neither folder nor tags changed
+			if !folderDiffers && !tagsDiffer {
+				continue
+			}
+
+			suggestions = append(suggestions, OrganizeSuggestion{
 				Item:          item,
 				CurrentPath:   currentPath,
 				SuggestedPath: resp.FolderPath,
 				IsNewFolder:   resp.IsNewFolder,
+				CurrentTags:   tags,
+				SuggestedTags: resp.SuggestedTags,
 				Processed:     false,
 			})
 		}
 
 		// Store suggestions and complete
-		return sortResultsMsg{suggestions: suggestions}
+		return organizeResultsMsg{suggestions: suggestions}
 	}
 }
 
-// sortNextUnprocessed moves cursor to next unprocessed suggestion.
-func (a *App) sortNextUnprocessed() {
-	for i := a.sort.Cursor + 1; i < len(a.sort.Suggestions); i++ {
-		if !a.sort.Suggestions[i].Processed {
-			a.sort.Cursor = i
+// organizeNextUnprocessed moves cursor to next unprocessed suggestion.
+func (a *App) organizeNextUnprocessed() {
+	for i := a.organize.Cursor + 1; i < len(a.organize.Suggestions); i++ {
+		if !a.organize.Suggestions[i].Processed {
+			a.organize.Cursor = i
 			return
 		}
 	}
 }
 
-// sortPrevUnprocessed moves cursor to previous unprocessed suggestion.
-func (a *App) sortPrevUnprocessed() {
-	for i := a.sort.Cursor - 1; i >= 0; i-- {
-		if !a.sort.Suggestions[i].Processed {
-			a.sort.Cursor = i
+// organizePrevUnprocessed moves cursor to previous unprocessed suggestion.
+func (a *App) organizePrevUnprocessed() {
+	for i := a.organize.Cursor - 1; i >= 0; i-- {
+		if !a.organize.Suggestions[i].Processed {
+			a.organize.Cursor = i
 			return
 		}
 	}
 }
 
-// sortAcceptCurrent moves the item to the suggested folder.
-func (a *App) sortAcceptCurrent() (tea.Model, tea.Cmd) {
-	sug := a.sort.CurrentSuggestion()
+// organizeAcceptCurrent applies the suggested organization changes.
+func (a *App) organizeAcceptCurrent() (tea.Model, tea.Cmd) {
+	sug := a.organize.CurrentSuggestion()
 	if sug == nil || sug.Processed {
 		return a, nil
 	}
 
-	// Get or create the target folder
-	targetFolder, created := a.store.GetOrCreateFolderByPath(sug.SuggestedPath)
-	var targetFolderID *string
-	if targetFolder != nil {
-		targetFolderID = &targetFolder.ID
+	var moved, tagged, created bool
+
+	// Apply folder move if different
+	if sug.HasFolderChanges() {
+		targetFolder, wasCreated := a.store.GetOrCreateFolderByPath(sug.SuggestedPath)
+		created = wasCreated
+		var targetFolderID *string
+		if targetFolder != nil {
+			targetFolderID = &targetFolder.ID
+		}
+
+		if sug.Item.IsFolder() {
+			folder := a.store.GetFolderByID(sug.Item.Folder.ID)
+			if folder != nil {
+				folder.ParentID = targetFolderID
+				moved = true
+			}
+		} else {
+			bookmark := a.store.GetBookmarkByID(sug.Item.Bookmark.ID)
+			if bookmark != nil {
+				bookmark.FolderID = targetFolderID
+				moved = true
+			}
+		}
 	}
 
-	// Move the item
-	if sug.Item.IsFolder() {
-		folder := a.store.GetFolderByID(sug.Item.Folder.ID)
-		if folder != nil {
-			folder.ParentID = targetFolderID
-		}
-	} else {
+	// Apply tag changes for bookmarks
+	if !sug.Item.IsFolder() && sug.HasTagChanges() {
 		bookmark := a.store.GetBookmarkByID(sug.Item.Bookmark.ID)
 		if bookmark != nil {
-			bookmark.FolderID = targetFolderID
+			bookmark.Tags = sug.SuggestedTags
+			tagged = true
 		}
 	}
 
 	sug.Processed = true
 
-	action := "Moved"
-	if created {
-		action = "Moved (created folder)"
+	// Build action message
+	var action string
+	switch {
+	case moved && tagged && created:
+		action = "Moved (new folder) + tagged"
+	case moved && tagged:
+		action = "Moved + tagged"
+	case moved && created:
+		action = "Moved (new folder)"
+	case moved:
+		action = "Moved"
+	case tagged:
+		action = "Tagged"
+	default:
+		action = "Organized"
 	}
 	cmd := a.setMessage(MessageInfo, action+": "+sug.Item.Title())
 
 	// Move to next or exit if done
-	if a.sort.UnprocessedCount() == 0 {
+	if a.organize.UnprocessedCount() == 0 {
 		a.mode = ModeNormal
 		a.refreshItems()
-		a.sort.Reset()
+		a.organize.Reset()
 		return a, cmd
 	}
-	a.sortNextUnprocessed()
+	a.organizeNextUnprocessed()
 	return a, cmd
 }
 
-// sortSkipCurrent marks the current suggestion as processed without moving.
-func (a *App) sortSkipCurrent() {
-	sug := a.sort.CurrentSuggestion()
+// organizeSkipCurrent marks the current suggestion as processed without moving.
+func (a *App) organizeSkipCurrent() {
+	sug := a.organize.CurrentSuggestion()
 	if sug == nil || sug.Processed {
 		return
 	}
 
 	sug.Processed = true
 
-	if a.sort.UnprocessedCount() == 0 {
+	if a.organize.UnprocessedCount() == 0 {
 		a.mode = ModeNormal
-		a.sort.Reset()
+		a.organize.Reset()
 		return
 	}
-	a.sortNextUnprocessed()
+	a.organizeNextUnprocessed()
 }
 
-// sortOpenCurrent opens the current item's URL in browser.
-func (a *App) sortOpenCurrent() (tea.Model, tea.Cmd) {
-	sug := a.sort.CurrentSuggestion()
+// organizeOpenCurrent opens the current item's URL in browser.
+func (a *App) organizeOpenCurrent() (tea.Model, tea.Cmd) {
+	sug := a.organize.CurrentSuggestion()
 	if sug == nil || sug.Item.IsFolder() {
 		return a, nil
 	}
@@ -3877,9 +3933,9 @@ func (a *App) sortOpenCurrent() (tea.Model, tea.Cmd) {
 	return a, openURLCmd(sug.Item.Bookmark.URL)
 }
 
-// sortEditCurrent switches to move mode for manual folder selection.
-func (a *App) sortEditCurrent() (tea.Model, tea.Cmd) {
-	sug := a.sort.CurrentSuggestion()
+// organizeMoveCurrent switches to move mode for manual folder selection.
+func (a *App) organizeMoveCurrent() (tea.Model, tea.Cmd) {
+	sug := a.organize.CurrentSuggestion()
 	if sug == nil || sug.Processed {
 		return a, nil
 	}
@@ -3891,16 +3947,16 @@ func (a *App) sortEditCurrent() (tea.Model, tea.Cmd) {
 	a.move.FilteredFolders = a.move.Folders
 	a.move.FolderIdx = a.findMoveFolderIndex(sug.SuggestedPath)
 	a.move.FilterInput.Focus()
-	a.move.ReturnMode = ModeSortResults
-	a.move.SortSuggestion = sug
+	a.move.ReturnMode = ModeOrganizeResults
+	a.move.OrganizeSuggestion = sug
 
 	a.mode = ModeMove
 	return a, nil
 }
 
-// sortDeleteCurrent deletes the current item.
-func (a *App) sortDeleteCurrent() (tea.Model, tea.Cmd) {
-	sug := a.sort.CurrentSuggestion()
+// organizeDeleteCurrent deletes the current item.
+func (a *App) organizeDeleteCurrent() (tea.Model, tea.Cmd) {
+	sug := a.organize.CurrentSuggestion()
 	if sug == nil || sug.Processed {
 		return a, nil
 	}
@@ -3917,12 +3973,12 @@ func (a *App) sortDeleteCurrent() (tea.Model, tea.Cmd) {
 	cmd := a.setMessage(MessageInfo, "Deleted: "+sug.Item.Title())
 
 	// Move to next or exit if done
-	if a.sort.UnprocessedCount() == 0 {
+	if a.organize.UnprocessedCount() == 0 {
 		a.mode = ModeNormal
 		a.refreshItems()
-		a.sort.Reset()
+		a.organize.Reset()
 		return a, cmd
 	}
-	a.sortNextUnprocessed()
+	a.organizeNextUnprocessed()
 	return a, cmd
 }

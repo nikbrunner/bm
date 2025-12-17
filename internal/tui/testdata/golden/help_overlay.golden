@@ -4,20 +4,21 @@
   h/l  back/fwd       A    add folder                                           
   gg   top            i    AI add                                               
   G    bottom         L    read later                                           
-  0    go to pins     e    edit                                                 
-                      t    tags                                                 
-  pins                y    yank                                                 
-  1-9  open pin       d    delete                                               
-  J/K  reorder        x    cut                                                  
-                      p/P  paste                                                
-  act                 c    confirm toggle                                       
-  l    open url                                                                 
-  Y    yank url       select                                                    
-  *    pin/unpin      v    select item                                          
-  s    search         V    visual mode                                          
-  /    filter         Esc  clear select                                         
-  o    sort                                                                     
-  m    move           tools                                                     
+  0    go to pins     O    organize                                             
+                      e    edit                                                 
+  pins                t    tags                                                 
+  1-9  open pin       y    yank                                                 
+  J/K  reorder        d    delete                                               
+                      x    cut                                                  
+  act                 p/P  paste                                                
+  l    open url       c    confirm toggle                                       
+  Y    yank url                                                                 
+  *    pin/unpin      select                                                    
+  s    search         v    select item                                          
+  /    filter         V    visual mode                                          
+  o    sort mode      Esc  clear select                                         
+  m    move                                                                     
+                      tools                                                     
                       C    cull dead links                                      
                                                                                 
                                                                                 

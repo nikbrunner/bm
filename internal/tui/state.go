@@ -58,13 +58,13 @@ type QuickAddCreateFolderState struct {
 
 // MoveState holds state for moving items to different folders.
 type MoveState struct {
-	FilterInput     textinput.Model // Filter input for folder search
-	Folders         []string        // All folder paths
-	FilteredFolders []string        // Filtered folder paths based on search
-	FolderIdx       int             // Selected folder index in filtered list
-	ItemsToMove     []Item          // Items to move (for batch operations)
-	ReturnMode      Mode            // Mode to return to after move (0 = ModeNormal)
-	SortSuggestion  *SortSuggestion // If set, mark as processed after move
+	FilterInput         textinput.Model      // Filter input for folder search
+	Folders             []string             // All folder paths
+	FilteredFolders     []string             // Filtered folder paths based on search
+	FolderIdx           int                  // Selected folder index in filtered list
+	ItemsToMove         []Item               // Items to move (for batch operations)
+	ReturnMode          Mode                 // Mode to return to after move (0 = ModeNormal)
+	OrganizeSuggestion  *OrganizeSuggestion  // If set, mark as processed after move
 }
 
 // NewMoveState creates a new MoveState with initialized input.
@@ -86,7 +86,7 @@ func (m *MoveState) Reset() {
 	m.FolderIdx = 0
 	m.ItemsToMove = nil
 	m.ReturnMode = 0 // ModeNormal
-	m.SortSuggestion = nil
+	m.OrganizeSuggestion = nil
 }
 
 // SearchState holds state for global search and local filtering.
@@ -323,35 +323,37 @@ func (c *CullState) CurrentItem() *culler.Result {
 	return &group.Results[c.ItemCursor]
 }
 
-// SortState holds state for the AI-powered auto-sort feature.
-type SortState struct {
-	SourceFolderID *string          // Folder being sorted (nil if single item)
-	SourceItem     *Item            // Single item if sorting one bookmark/folder
-	Suggestions    []SortSuggestion // Items that need relocation
-	Cursor         int              // Current selection in suggestions list
-	Progress       int              // Items analyzed so far
-	Total          int              // Total items to analyze
-	MenuCursor     int              // Cursor for sort menu (0=fresh, 1=cached)
-	CacheTime      time.Time        // When cache was created
-	HasCache       bool             // Whether cache file exists
+// OrganizeState holds state for the AI-powered organize feature.
+type OrganizeState struct {
+	SourceFolderID *string              // Folder being organized (nil if single item)
+	SourceItem     *Item                // Single item if organizing one bookmark/folder
+	Suggestions    []OrganizeSuggestion // Items that need organization
+	Cursor         int                  // Current selection in suggestions list
+	Progress       int                  // Items analyzed so far
+	Total          int                  // Total items to analyze
+	MenuCursor     int                  // Cursor for organize menu (0=fresh, 1=cached)
+	CacheTime      time.Time            // When cache was created
+	HasCache       bool                 // Whether cache file exists
 }
 
-// SortSuggestion represents a suggested relocation for an item.
-type SortSuggestion struct {
-	Item          Item   // The bookmark or folder to move
-	CurrentPath   string // Where it is now
-	SuggestedPath string // Where AI suggests moving it
-	IsNewFolder   bool   // True if destination folder doesn't exist yet
-	Processed     bool   // True after user accepts/skips/deletes
+// OrganizeSuggestion represents a suggested organization change for an item.
+type OrganizeSuggestion struct {
+	Item          Item     // The bookmark or folder to organize
+	CurrentPath   string   // Where it is now
+	SuggestedPath string   // Where AI suggests moving it
+	IsNewFolder   bool     // True if destination folder doesn't exist yet
+	CurrentTags   []string // Current tags (bookmarks only)
+	SuggestedTags []string // AI-suggested tags (bookmarks only)
+	Processed     bool     // True after user accepts/skips/deletes
 }
 
-// NewSortState creates an empty SortState.
-func NewSortState() SortState {
-	return SortState{}
+// NewOrganizeState creates an empty OrganizeState.
+func NewOrganizeState() OrganizeState {
+	return OrganizeState{}
 }
 
-// Reset clears all sort state except cache info.
-func (s *SortState) Reset() {
+// Reset clears all organize state except cache info.
+func (s *OrganizeState) Reset() {
 	s.SourceFolderID = nil
 	s.SourceItem = nil
 	s.Suggestions = nil
@@ -363,7 +365,7 @@ func (s *SortState) Reset() {
 }
 
 // CurrentSuggestion returns the currently selected suggestion, or nil if none.
-func (s *SortState) CurrentSuggestion() *SortSuggestion {
+func (s *OrganizeState) CurrentSuggestion() *OrganizeSuggestion {
 	if len(s.Suggestions) == 0 || s.Cursor >= len(s.Suggestions) {
 		return nil
 	}
@@ -371,7 +373,7 @@ func (s *SortState) CurrentSuggestion() *SortSuggestion {
 }
 
 // UnprocessedCount returns the number of suggestions not yet processed.
-func (s *SortState) UnprocessedCount() int {
+func (s *OrganizeState) UnprocessedCount() int {
 	count := 0
 	for _, sug := range s.Suggestions {
 		if !sug.Processed {
@@ -379,4 +381,27 @@ func (s *SortState) UnprocessedCount() int {
 		}
 	}
 	return count
+}
+
+// HasFolderChanges returns true if suggested folder differs from current.
+func (s *OrganizeSuggestion) HasFolderChanges() bool {
+	return s.CurrentPath != s.SuggestedPath
+}
+
+// HasTagChanges returns true if suggested tags differ from current.
+func (s *OrganizeSuggestion) HasTagChanges() bool {
+	if len(s.CurrentTags) != len(s.SuggestedTags) {
+		return true
+	}
+	// Create maps for comparison (order-independent)
+	currentSet := make(map[string]bool)
+	for _, tag := range s.CurrentTags {
+		currentSet[tag] = true
+	}
+	for _, tag := range s.SuggestedTags {
+		if !currentSet[tag] {
+			return true
+		}
+	}
+	return false
 }

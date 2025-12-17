@@ -318,12 +318,12 @@ func (a App) renderModal() string {
 	case ModeCullInspect:
 		return a.renderCullInspect()
 
-	case ModeSortMenu:
-		return a.renderSortMenu()
-	case ModeSortLoading:
-		return a.renderSortLoading()
-	case ModeSortResults:
-		return a.renderSortResults()
+	case ModeOrganizeMenu:
+		return a.renderOrganizeMenu()
+	case ModeOrganizeLoading:
+		return a.renderOrganizeLoading()
+	case ModeOrganizeResults:
+		return a.renderOrganizeResults()
 
 	case ModeMove:
 		// Get item being moved
@@ -1018,7 +1018,7 @@ func (a App) renderHelpOverlay() string {
 	left.WriteString("*    pin/unpin\n")
 	left.WriteString("s    search\n")
 	left.WriteString("/    filter\n")
-	left.WriteString("o    sort\n")
+	left.WriteString("o    sort mode\n")
 	left.WriteString("m    move\n")
 
 	// Right column: Edit + Selection
@@ -1028,6 +1028,7 @@ func (a App) renderHelpOverlay() string {
 	right.WriteString("A    add folder\n")
 	right.WriteString("i    AI add\n")
 	right.WriteString("L    read later\n")
+	right.WriteString("O    organize\n")
 	right.WriteString("e    edit\n")
 	right.WriteString("t    tags\n")
 	right.WriteString("y    yank\n")
@@ -1118,8 +1119,8 @@ func (a App) renderCullMenu() string {
 	return lipgloss.JoinVertical(lipgloss.Left, modal, a.renderHelpBar())
 }
 
-// renderSortMenu renders the menu to choose between fresh or cached sort.
-func (a App) renderSortMenu() string {
+// renderOrganizeMenu renders the menu to choose between fresh or cached organize.
+func (a App) renderOrganizeMenu() string {
 	modalWidth := layout.CalculateModalWidth(a.width, a.layoutConfig.Modal.DefaultWidthPercent, a.layoutConfig.Modal)
 
 	accent := lipgloss.AdaptiveColor{Light: "#6B8E23", Dark: "#9ACD32"}
@@ -1130,7 +1131,7 @@ func (a App) renderSortMenu() string {
 		Width(modalWidth)
 
 	var content strings.Builder
-	content.WriteString(a.styles.Title.Render("Auto-Sort"))
+	content.WriteString(a.styles.Title.Render("Organize"))
 	content.WriteString("\n\n")
 
 	// Menu options
@@ -1140,9 +1141,9 @@ func (a App) renderSortMenu() string {
 	}
 
 	// Format cached option with age and count
-	if a.sort.HasCache {
-		age := formatTimeAgo(a.sort.CacheTime)
-		count := a.countCachedSortSuggestions()
+	if a.organize.HasCache {
+		age := formatTimeAgo(a.organize.CacheTime)
+		count := a.countCachedOrganizeSuggestions()
 		options[1] = fmt.Sprintf("Use cached results (%s, %d items)", age, count)
 	}
 
@@ -1151,7 +1152,7 @@ func (a App) renderSortMenu() string {
 			continue // Skip empty
 		}
 		line := opt
-		if i == a.sort.MenuCursor {
+		if i == a.organize.MenuCursor {
 			// Pad for selection highlight
 			padded := line
 			for len(padded) < modalWidth-8 {
@@ -1376,8 +1377,8 @@ func (a App) renderCullInspect() string {
 	return lipgloss.JoinVertical(lipgloss.Left, modal, a.renderHelpBar())
 }
 
-// renderSortLoading renders the loading screen during AI analysis.
-func (a App) renderSortLoading() string {
+// renderOrganizeLoading renders the loading screen during AI analysis.
+func (a App) renderOrganizeLoading() string {
 	modalWidth := layout.CalculateModalWidth(a.width, a.layoutConfig.Modal.DefaultWidthPercent, a.layoutConfig.Modal)
 
 	accent := lipgloss.AdaptiveColor{Light: "#6B8E23", Dark: "#9ACD32"}
@@ -1388,20 +1389,20 @@ func (a App) renderSortLoading() string {
 		Width(modalWidth)
 
 	var content strings.Builder
-	content.WriteString(a.styles.Title.Render("Auto-Sort"))
+	content.WriteString(a.styles.Title.Render("Organize"))
 	content.WriteString("\n\n")
-	content.WriteString(fmt.Sprintf("Analyzing %d items...\n\n", a.sort.Total))
+	content.WriteString(fmt.Sprintf("Analyzing %d items...\n\n", a.organize.Total))
 
 	// Progress bar
-	if a.sort.Total > 0 {
-		progress := float64(a.sort.Progress) / float64(a.sort.Total)
+	if a.organize.Total > 0 {
+		progress := float64(a.organize.Progress) / float64(a.organize.Total)
 		barWidth := modalWidth - 10
 		filled := int(progress * float64(barWidth))
 		empty := barWidth - filled
 
 		bar := strings.Repeat("█", filled) + strings.Repeat("░", empty)
 		content.WriteString(bar + "\n\n")
-		content.WriteString(fmt.Sprintf("[%d/%d]", a.sort.Progress, a.sort.Total))
+		content.WriteString(fmt.Sprintf("[%d/%d]", a.organize.Progress, a.organize.Total))
 	}
 
 	modal := lipgloss.Place(
@@ -1415,8 +1416,8 @@ func (a App) renderSortLoading() string {
 	return lipgloss.JoinVertical(lipgloss.Left, modal, a.renderHelpBar())
 }
 
-// renderSortResults renders the list of suggested moves.
-func (a App) renderSortResults() string {
+// renderOrganizeResults renders the list of suggested organization changes.
+func (a App) renderOrganizeResults() string {
 	modalWidth := layout.CalculateModalWidth(a.width, a.layoutConfig.Modal.LargeWidthPercent, a.layoutConfig.Modal)
 
 	accent := lipgloss.AdaptiveColor{Light: "#6B8E23", Dark: "#9ACD32"}
@@ -1428,29 +1429,29 @@ func (a App) renderSortResults() string {
 
 	var content strings.Builder
 
-	unprocessed := a.sort.UnprocessedCount()
-	title := fmt.Sprintf("Auto-Sort Results (%d to move)", unprocessed)
+	unprocessed := a.organize.UnprocessedCount()
+	title := fmt.Sprintf("Organize Results (%d to review)", unprocessed)
 	content.WriteString(a.styles.Title.Render(title))
 	content.WriteString("\n\n")
 
-	if len(a.sort.Suggestions) == 0 {
+	if len(a.organize.Suggestions) == 0 {
 		content.WriteString(a.styles.Empty.Render("All items already well-organized!"))
 	} else {
 		// Filter to unprocessed suggestions for display
 		var visibleSuggestions []int
-		for i, sug := range a.sort.Suggestions {
+		for i, sug := range a.organize.Suggestions {
 			if !sug.Processed {
 				visibleSuggestions = append(visibleSuggestions, i)
 			}
 		}
 
-		maxVisible := 8
+		maxVisible := 6 // Reduced to accommodate tag lines
 		itemWidth := modalWidth - 6
 
 		// Find cursor position in visible list
 		cursorVisibleIdx := 0
 		for i, idx := range visibleSuggestions {
-			if idx == a.sort.Cursor {
+			if idx == a.organize.Cursor {
 				cursorVisibleIdx = i
 				break
 			}
@@ -1460,8 +1461,8 @@ func (a App) renderSortResults() string {
 
 		for vi := start; vi < end; vi++ {
 			idx := visibleSuggestions[vi]
-			sug := a.sort.Suggestions[idx]
-			isSelected := idx == a.sort.Cursor
+			sug := a.organize.Suggestions[idx]
+			isSelected := idx == a.organize.Cursor
 
 			// Title line
 			titleLine := sug.Item.Title()
@@ -1469,25 +1470,59 @@ func (a App) renderSortResults() string {
 				titleLine = titleLine[:itemWidth-5] + "..."
 			}
 
-			// Path line: /Current -> /Suggested
-			pathLine := sug.CurrentPath + " -> " + sug.SuggestedPath
-			if sug.IsNewFolder {
-				pathLine += " (new)"
+			// Path line (only if folder changes)
+			var pathLine string
+			if sug.HasFolderChanges() {
+				pathLine = sug.CurrentPath + " → " + sug.SuggestedPath
+				if sug.IsNewFolder {
+					pathLine += " (new)"
+				}
+				if len(pathLine) > itemWidth-4 {
+					pathLine = pathLine[:itemWidth-7] + "..."
+				}
 			}
-			if len(pathLine) > itemWidth-4 {
-				pathLine = pathLine[:itemWidth-7] + "..."
+
+			// Tags line (only if tags change and not a folder)
+			var tagsLine string
+			if !sug.Item.IsFolder() && sug.HasTagChanges() {
+				currentTagsStr := strings.Join(sug.CurrentTags, ", ")
+				if currentTagsStr == "" {
+					currentTagsStr = "(none)"
+				}
+				suggestedTagsStr := strings.Join(sug.SuggestedTags, ", ")
+				if suggestedTagsStr == "" {
+					suggestedTagsStr = "(none)"
+				}
+				tagsLine = "Tags: " + currentTagsStr + " → " + suggestedTagsStr
+				if len(tagsLine) > itemWidth-4 {
+					tagsLine = tagsLine[:itemWidth-7] + "..."
+				}
 			}
 
 			if isSelected {
 				content.WriteString(a.styles.ItemSelected.Render("> " + titleLine))
 				content.WriteString("\n")
-				content.WriteString(a.styles.URL.Render("  " + pathLine))
-				content.WriteString("\n\n")
+				if pathLine != "" {
+					content.WriteString(a.styles.URL.Render("  " + pathLine))
+					content.WriteString("\n")
+				}
+				if tagsLine != "" {
+					content.WriteString(a.styles.Tag.Render("  " + tagsLine))
+					content.WriteString("\n")
+				}
+				content.WriteString("\n")
 			} else {
 				content.WriteString("  " + titleLine)
 				content.WriteString("\n")
-				content.WriteString(a.styles.Empty.Render("  " + pathLine))
-				content.WriteString("\n\n")
+				if pathLine != "" {
+					content.WriteString(a.styles.Empty.Render("  " + pathLine))
+					content.WriteString("\n")
+				}
+				if tagsLine != "" {
+					content.WriteString(a.styles.Empty.Render("  " + tagsLine))
+					content.WriteString("\n")
+				}
+				content.WriteString("\n")
 			}
 		}
 	}

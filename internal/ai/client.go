@@ -119,9 +119,9 @@ func (c *Client) SuggestBookmark(url string, context string) (*Response, error) 
 	return &result, nil
 }
 
-// SuggestSort calls the AI to suggest a better folder location for an item.
-func (c *Client) SuggestSort(title, url, currentPath string, tags []string, isFolder bool, context string) (*SortResponse, error) {
-	prompt := buildSortPrompt(title, url, currentPath, tags, isFolder, context)
+// SuggestOrganize calls the AI to suggest folder and tags for an item.
+func (c *Client) SuggestOrganize(title, url, currentPath string, tags []string, isFolder bool, context string) (*OrganizeResponse, error) {
+	prompt := buildOrganizePrompt(title, url, currentPath, tags, isFolder, context)
 
 	reqBody := apiRequest{
 		Model:     haikuModel,
@@ -134,11 +134,12 @@ func (c *Client) SuggestSort(title, url, currentPath string, tags []string, isFo
 			Schema: jsonSchema{
 				Type: "object",
 				Properties: map[string]schemaProp{
-					"folderPath":  {Type: "string"},
-					"isNewFolder": {Type: "boolean"},
-					"confidence":  {Type: "string"},
+					"folderPath":    {Type: "string"},
+					"isNewFolder":   {Type: "boolean"},
+					"suggestedTags": {Type: "array", Items: &schemaProp{Type: "string"}},
+					"confidence":    {Type: "string"},
 				},
-				Required:             []string{"folderPath", "isNewFolder", "confidence"},
+				Required:             []string{"folderPath", "isNewFolder", "suggestedTags", "confidence"},
 				AdditionalProperties: false,
 			},
 		},
@@ -183,7 +184,7 @@ func (c *Client) SuggestSort(title, url, currentPath string, tags []string, isFo
 		return nil, ErrInvalidResponse
 	}
 
-	var result SortResponse
+	var result OrganizeResponse
 	if err := json.Unmarshal([]byte(apiResp.Content[0].Text), &result); err != nil {
 		return nil, fmt.Errorf("unmarshal AI response: %w", err)
 	}
@@ -206,7 +207,7 @@ Instructions:
 - If suggesting new tags, keep them lowercase and concise`, url, context)
 }
 
-func buildSortPrompt(title, url, currentPath string, tags []string, isFolder bool, context string) string {
+func buildOrganizePrompt(title, url, currentPath string, tags []string, isFolder bool, context string) string {
 	itemType := "bookmark"
 	if isFolder {
 		itemType = "folder"
@@ -214,7 +215,7 @@ func buildSortPrompt(title, url, currentPath string, tags []string, isFolder boo
 
 	tagsStr := ""
 	if len(tags) > 0 {
-		tagsStr = fmt.Sprintf("\n- Tags: %s", strings.Join(tags, ", "))
+		tagsStr = fmt.Sprintf("\n- Current tags: %s", strings.Join(tags, ", "))
 	}
 
 	urlStr := ""
@@ -222,7 +223,19 @@ func buildSortPrompt(title, url, currentPath string, tags []string, isFolder boo
 		urlStr = fmt.Sprintf("\n- URL: %s", url)
 	}
 
-	return fmt.Sprintf(`Analyze this %s and suggest the best parent folder for it.
+	tagInstructions := ""
+	if !isFolder {
+		tagInstructions = `
+- Suggest 1-3 relevant tags for this bookmark
+- Prefer existing tags when they fit well
+- If current tags are already optimal, return them as-is
+- Keep tags lowercase and concise
+- Return empty array only if no tags are appropriate`
+	} else {
+		tagInstructions = "\n- Return empty array for suggestedTags (folders don't have tags)"
+	}
+
+	return fmt.Sprintf(`Analyze this %s and suggest the best organization.
 
 Item:
 - Title: %s%s
@@ -235,6 +248,6 @@ Instructions:
 - Only suggest a new folder path if nothing existing is appropriate
 - Set isNewFolder=true only when suggesting a folder that doesn't exist
 - If current location is already optimal, return the current path exactly
-- Confidence: "high" if clear match, "medium" if reasonable, "low" if uncertain`,
-		itemType, title, urlStr, currentPath, tagsStr, context)
+- Confidence: "high" if clear match, "medium" if reasonable, "low" if uncertain%s`,
+		itemType, title, urlStr, currentPath, tagsStr, context, tagInstructions)
 }
