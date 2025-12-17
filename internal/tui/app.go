@@ -697,6 +697,27 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Continue ticking
 		return a, cullTickCmd()
 
+	case sortTickMsg:
+		if a.mode != ModeSortLoading {
+			return a, nil
+		}
+		a.sort.Progress = int(atomic.LoadInt64(&sortProgressCounter))
+		if a.sort.Progress < a.sort.Total {
+			return a, sortTickCmd()
+		}
+		return a, nil
+
+	case sortResultsMsg:
+		a.sort.Suggestions = msg.suggestions
+		if len(msg.suggestions) == 0 {
+			a.mode = ModeNormal
+			a.setStatus("All items already well-organized!")
+			return a, nil
+		}
+		a.sort.Cursor = 0
+		a.mode = ModeSortResults
+		return a, nil
+
 	case cullCompleteMsg:
 		// URL checking is complete - save cache
 		_ = a.saveCullCache(msg.results)
