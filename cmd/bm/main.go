@@ -141,21 +141,17 @@ func runTUI() {
 		os.Exit(1)
 	}
 
-	app := tui.NewApp(tui.AppParams{Store: store, Config: config})
+	app := tui.NewApp(tui.AppParams{Store: store, Storage: dataStorage, Config: config})
 	p := tea.NewProgram(app, tea.WithAltScreen())
-	finalModel, err := p.Run()
+	_, err = p.Run()
 	if err != nil {
 		closeStorage()
 		fmt.Fprintf(os.Stderr, "Error running app: %v\n", err)
 		os.Exit(1)
 	}
 
-	finalApp := finalModel.(tui.App)
-	if err := dataStorage.Save(finalApp.Store()); err != nil {
-		closeStorage()
-		fmt.Fprintf(os.Stderr, "Error saving bookmarks: %v\n", err)
-		os.Exit(1)
-	}
+	// Note: Auto-save happens after each mutation in the TUI,
+	// so we don't need to save on exit anymore.
 	closeStorage()
 }
 

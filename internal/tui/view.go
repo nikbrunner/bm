@@ -1558,3 +1558,14 @@ func (a App) getItemsForFolder(folderID *string) []Item {
 func (a App) Store() *model.Store {
 	return a.store
 }
+
+// saveStore persists the current store to storage (if storage is configured).
+// This should be called after any mutation to the store.
+func (a *App) saveStore() {
+	if a.storage == nil {
+		return
+	}
+	if err := a.storage.Save(a.store); err != nil {
+		a.setMessage(MessageError, "Save failed: "+err.Error())
+	}
+}

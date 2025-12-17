@@ -202,6 +202,7 @@ func (is itemStrings) Len() int {
 // App is the main bubbletea model for the bookmark manager.
 type App struct {
 	store        *model.Store
+	storage      storage.Storage // for auto-saving after mutations
 	config       *storage.Config // app settings (quick add folder, etc.)
 	keys         KeyMap
 	styles       Styles
@@ -262,6 +263,7 @@ type App struct {
 // AppParams holds parameters for creating a new App.
 type AppParams struct {
 	Store        *model.Store
+	Storage      storage.Storage      // optional, for auto-saving after mutations
 	Config       *storage.Config      // optional, uses default if nil
 	Keys         *KeyMap              // optional, uses default if nil
 	Styles       *Styles              // optional, uses default if nil
@@ -292,6 +294,7 @@ func NewApp(params AppParams) App {
 
 	app := App{
 		store:         params.Store,
+		storage:       params.Storage,
 		config:        &cfg,
 		keys:          keys,
 		styles:        styles,
@@ -780,6 +783,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					Tags:     []string{},
 				})
 				a.store.AddBookmark(newBookmark)
+				a.saveStore()
 				a.refreshItems()
 				a.mode = ModeNormal
 				a.setStatus("AI failed, saved to 'To Review': " + msg.err.Error())
@@ -843,6 +847,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				Tags:     tags,
 			})
 			a.store.AddBookmark(newBookmark)
+			a.saveStore()
 			a.refreshItems()
 
 			if msg.err == nil {
@@ -1499,6 +1504,7 @@ func (a *App) togglePinCurrentItem() tea.Cmd {
 			}
 		}
 
+		a.saveStore()
 		a.clearSelection()
 		a.refreshItems()
 		a.refreshPinnedItems()
@@ -1536,6 +1542,7 @@ func (a *App) togglePinCurrentItem() tea.Cmd {
 		}
 	}
 
+	a.saveStore()
 	a.refreshItems()
 	a.refreshPinnedItems()
 	return cmd
@@ -2209,6 +2216,7 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 				// Create the folder
 				a.store.GetOrCreateFolderByPath(newFolderPath)
+				a.saveStore()
 
 				// Rebuild folder paths and select the new folder
 				a.quickAdd.Folders = a.buildOrderedFolderPaths(a.browser.CurrentFolderID, "")
@@ -2351,6 +2359,7 @@ func (a App) submitModal() (tea.Model, tea.Cmd) {
 			ParentID: a.browser.CurrentFolderID,
 		})
 		a.store.AddFolder(newFolder)
+		a.saveStore()
 		a.refreshItems()
 		a.mode = ModeNormal
 		a.setStatus("Folder added: " + name)
@@ -2372,6 +2381,7 @@ func (a App) submitModal() (tea.Model, tea.Cmd) {
 			Tags:     []string{},
 		})
 		a.store.AddBookmark(newBookmark)
+		a.saveStore()
 		a.refreshItems()
 		a.mode = ModeNormal
 		a.setStatus("Bookmark added: " + title)
@@ -2389,6 +2399,7 @@ func (a App) submitModal() (tea.Model, tea.Cmd) {
 		if folder != nil {
 			folder.Name = name
 		}
+		a.saveStore()
 		a.refreshItems()
 		a.mode = ModeNormal
 		return a, nil
@@ -2407,6 +2418,7 @@ func (a App) submitModal() (tea.Model, tea.Cmd) {
 			bookmark.Title = title
 			bookmark.URL = url
 		}
+		a.saveStore()
 		a.refreshItems()
 		a.mode = ModeNormal
 		return a, nil
@@ -2429,6 +2441,7 @@ func (a App) submitModal() (tea.Model, tea.Cmd) {
 		if bookmark != nil {
 			bookmark.Tags = tags
 		}
+		a.saveStore()
 		a.refreshItems()
 		a.mode = ModeNormal
 		return a, nil
@@ -2478,6 +2491,7 @@ func (a App) submitQuickAdd() (tea.Model, tea.Cmd) {
 		Tags:     tags,
 	})
 	a.store.AddBookmark(newBookmark)
+	a.saveStore()
 	a.refreshItems()
 	a.mode = ModeNormal
 	a.setStatus("Bookmark added: " + title)
@@ -2619,6 +2633,7 @@ func (a *App) cutCurrentItem() {
 		a.store.RemoveBookmarkByID(item.Bookmark.ID)
 		a.setStatus("Cut: " + item.Bookmark.Title)
 	}
+	a.saveStore()
 
 	a.refreshItems()
 	if a.browser.Cursor >= len(a.browser.Items) && a.browser.Cursor > 0 {
@@ -2672,6 +2687,7 @@ func (a *App) deleteCurrentItem() {
 		a.store.RemoveBookmarkByID(item.Bookmark.ID)
 		a.setStatus("Deleted: " + item.Bookmark.Title)
 	}
+	a.saveStore()
 
 	a.refreshItems()
 	if a.browser.Cursor >= len(a.browser.Items) && a.browser.Cursor > 0 {
@@ -2696,6 +2712,7 @@ func (a *App) confirmDeleteItem() {
 				a.store.RemoveBookmarkByID(item.Bookmark.ID)
 			}
 		}
+		a.saveStore()
 
 		count := len(a.modal.DeleteItems)
 		a.modal.DeleteItems = nil
@@ -2746,6 +2763,7 @@ func (a *App) confirmDeleteItem() {
 		}
 		a.store.RemoveBookmarkByID(a.modal.EditItemID)
 	}
+	a.saveStore()
 
 	// Refresh items and adjust cursor
 	a.refreshItems()
@@ -2807,6 +2825,7 @@ func (a *App) executeMoveItem() {
 		}
 	}
 
+	a.saveStore()
 	a.clearSelection()
 	a.move.ItemsToMove = nil
 	a.refreshItems()
@@ -2905,6 +2924,7 @@ func (a *App) pasteItem(before bool) {
 		pastedCount++
 	}
 
+	a.saveStore()
 	a.refreshItems()
 	if pastedCount == 1 {
 		a.setStatus("Pasted: " + a.yankedItems[0].Title())
@@ -3520,6 +3540,7 @@ func (a *App) cullDeleteGroup() (tea.Model, tea.Cmd) {
 		count++
 	}
 
+	a.saveStore()
 	a.refreshItems()
 	a.refreshPinnedItems()
 
@@ -3556,6 +3577,7 @@ func (a *App) cullDeleteItem() (tea.Model, tea.Cmd) {
 
 	title := result.Bookmark.Title
 	a.store.RemoveBookmarkByID(result.Bookmark.ID)
+	a.saveStore()
 	a.refreshItems()
 	a.refreshPinnedItems()
 
@@ -3875,6 +3897,11 @@ func (a *App) organizeAcceptCurrent() (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// Save after applying changes
+	if moved || tagged {
+		a.saveStore()
+	}
+
 	sug.Processed = true
 
 	// Build action message
@@ -3967,6 +3994,7 @@ func (a *App) organizeDeleteCurrent() (tea.Model, tea.Cmd) {
 	} else {
 		a.store.RemoveBookmarkByID(sug.Item.Bookmark.ID)
 	}
+	a.saveStore()
 
 	sug.Processed = true
 
