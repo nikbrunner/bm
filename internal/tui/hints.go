@@ -145,6 +145,7 @@ func (a App) getNormalModeHints() HintSet {
 		Action: []Hint{
 			{Key: "*", Desc: "pin"},
 			{Key: "m", Desc: "move"},
+			{Key: "S", Desc: "sort"},
 			{Key: "v/V", Desc: "select"},
 		},
 	}
