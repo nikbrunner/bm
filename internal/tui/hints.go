@@ -138,7 +138,7 @@ func (a App) getNormalModeHints() HintSet {
 		Nav: []Hint{
 			{Key: "j/k", Desc: "move"},
 			{Key: "h", Desc: "back"},
-			{Key: "l", Desc: "open"},
+			{Key: "l", Desc: "enter"},
 		},
 		Edit: []Hint{
 			{Key: "y", Desc: "yank"},
@@ -148,6 +148,7 @@ func (a App) getNormalModeHints() HintSet {
 			{Key: "e", Desc: "edit"},
 		},
 		Action: []Hint{
+			{Key: "o", Desc: "open"},
 			{Key: "*", Desc: "pin"},
 			{Key: "m", Desc: "move"},
 			{Key: "O", Desc: "organize"},

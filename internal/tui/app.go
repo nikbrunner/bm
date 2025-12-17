@@ -1177,6 +1177,16 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
+		case key.Matches(msg, a.keys.Open):
+			// Open bookmark in browser (only for bookmarks, no-op for folders)
+			displayItems := a.getDisplayItems()
+			if len(displayItems) > 0 && a.browser.Cursor < len(displayItems) {
+				item := displayItems[a.browser.Cursor]
+				if !item.IsFolder() {
+					return a.openBookmark()
+				}
+			}
+
 		case key.Matches(msg, a.keys.Left):
 			// At root level: switch to pinned pane
 			if a.browser.CurrentFolderID == nil {

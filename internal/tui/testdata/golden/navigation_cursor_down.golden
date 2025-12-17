@@ -1,25 +1,25 @@
-                                                                                                      
-   bm                                                                                                 
-  ┏━━━━━━━━━━━━━━━━━━━━━━━━┓┏━━━━━━━━━━━━━━━━━━━━━━━━┓┏━━━━━━━━━━━━━━━━━━━━━━━━┓                      
-  ┃ bm                     ┃┃  Development/          ┃┃ (empty folder)         ┃                      
-  ┃ bookmarks              ┃┃  Tools/                ┃┃                        ┃                      
-  ┃                        ┃┃  GitHub                ┃┃                        ┃                      
-  ┃                        ┃┃                        ┃┃                        ┃                      
-  ┃                        ┃┃                        ┃┃                        ┃                      
-  ┃                        ┃┃                        ┃┃                        ┃                      
-  ┃                        ┃┃                        ┃┃                        ┃                      
-  ┃                        ┃┃                        ┃┃                        ┃                      
-  ┃                        ┃┃                        ┃┃                        ┃                      
-  ┃                        ┃┃                        ┃┃                        ┃                      
-  ┃                        ┃┃                        ┃┃                        ┃                      
-  ┃                        ┃┃                        ┃┃                        ┃                      
-  ┃                        ┃┃                        ┃┃                        ┃                      
-  ┃                        ┃┃                        ┃┃                        ┃                      
-  ┃                        ┃┃                        ┃┃                        ┃                      
-  ┃                        ┃┃                        ┃┃                        ┃                      
-  ┃                        ┃┃                        ┃┃                        ┃                      
-  ┗━━━━━━━━━━━━━━━━━━━━━━━━┛┗━━━━━━━━━━━━━━━━━━━━━━━━┛┗━━━━━━━━━━━━━━━━━━━━━━━━┛                      
-                                                                                                      
-  [ord:man] [cfm:on]                                                                                  
-  Local  j/k:move h:back l:open *:pin m:move O:organize v/V:select y:yank d:del x:cut p:paste e:edit  
-  Global s:search /:filter i:AI add L:read later a/A:add C:cull .:settings ?:help q:quit              
+                                                                                                              
+   bm                                                                                                         
+  ┏━━━━━━━━━━━━━━━━━━━━━━━━┓┏━━━━━━━━━━━━━━━━━━━━━━━━┓┏━━━━━━━━━━━━━━━━━━━━━━━━┓                              
+  ┃ bm                     ┃┃  Development/          ┃┃ (empty folder)         ┃                              
+  ┃ bookmarks              ┃┃  Tools/                ┃┃                        ┃                              
+  ┃                        ┃┃  GitHub                ┃┃                        ┃                              
+  ┃                        ┃┃                        ┃┃                        ┃                              
+  ┃                        ┃┃                        ┃┃                        ┃                              
+  ┃                        ┃┃                        ┃┃                        ┃                              
+  ┃                        ┃┃                        ┃┃                        ┃                              
+  ┃                        ┃┃                        ┃┃                        ┃                              
+  ┃                        ┃┃                        ┃┃                        ┃                              
+  ┃                        ┃┃                        ┃┃                        ┃                              
+  ┃                        ┃┃                        ┃┃                        ┃                              
+  ┃                        ┃┃                        ┃┃                        ┃                              
+  ┃                        ┃┃                        ┃┃                        ┃                              
+  ┃                        ┃┃                        ┃┃                        ┃                              
+  ┃                        ┃┃                        ┃┃                        ┃                              
+  ┃                        ┃┃                        ┃┃                        ┃                              
+  ┃                        ┃┃                        ┃┃                        ┃                              
+  ┗━━━━━━━━━━━━━━━━━━━━━━━━┛┗━━━━━━━━━━━━━━━━━━━━━━━━┛┗━━━━━━━━━━━━━━━━━━━━━━━━┛                              
+                                                                                                              
+  [ord:man] [cfm:on]                                                                                          
+  Local  j/k:move h:back l:enter o:open *:pin m:move O:organize v/V:select y:yank d:del x:cut p:paste e:edit  
+  Global s:search /:filter i:AI add L:read later a/A:add C:cull .:settings ?:help q:quit                      

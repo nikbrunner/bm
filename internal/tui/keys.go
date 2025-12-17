@@ -21,8 +21,7 @@ type KeyMap struct {
 	ReadLater     key.Binding
 	Edit          key.Binding
 	EditTags      key.Binding
-	Sort          key.Binding
-	ToggleConfirm key.Binding
+	Open          key.Binding
 	Search        key.Binding
 	Filter        key.Binding
 	YankURL       key.Binding
@@ -109,13 +108,9 @@ func DefaultKeyMap() KeyMap {
 			key.WithKeys("t"),
 			key.WithHelp("t", "edit tags"),
 		),
-		Sort: key.NewBinding(
+		Open: key.NewBinding(
 			key.WithKeys("o"),
-			key.WithHelp("o", "cycle sort"),
-		),
-		ToggleConfirm: key.NewBinding(
-			key.WithKeys("c"),
-			key.WithHelp("c", "toggle confirm"),
+			key.WithHelp("o", "open in browser"),
 		),
 		Search: key.NewBinding(
 			key.WithKeys("s"),
