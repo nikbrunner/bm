@@ -117,6 +117,10 @@ func (a App) getContextualHints() HintSet {
 		return a.getCullResultsHints()
 	case ModeCullInspect:
 		return a.getCullInspectHints()
+	case ModeSortLoading:
+		return a.getSortLoadingHints()
+	case ModeSortResults:
+		return a.getSortResultsHints()
 	default:
 		return HintSet{}
 	}
@@ -373,6 +377,34 @@ func (a App) getCullInspectHints() HintSet {
 		},
 		System: []Hint{
 			{Key: "Esc", Desc: "back"},
+		},
+	}
+}
+
+// getSortLoadingHints returns hints for ModeSortLoading.
+func (a App) getSortLoadingHints() HintSet {
+	return HintSet{
+		System: []Hint{
+			{Key: "Esc", Desc: "cancel"},
+		},
+	}
+}
+
+// getSortResultsHints returns hints for ModeSortResults.
+func (a App) getSortResultsHints() HintSet {
+	return HintSet{
+		Nav: []Hint{
+			{Key: "j/k", Desc: "move"},
+		},
+		Action: []Hint{
+			{Key: "Enter", Desc: "accept"},
+			{Key: "s", Desc: "skip"},
+			{Key: "o", Desc: "open"},
+			{Key: "e", Desc: "edit"},
+			{Key: "d", Desc: "del"},
+		},
+		System: []Hint{
+			{Key: "q/Esc", Desc: "quit"},
 		},
 	}
 }
