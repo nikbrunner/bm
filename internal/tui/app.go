@@ -1602,6 +1602,17 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, nil
 	}
 
+	// Handle sort loading mode
+	if a.mode == ModeSortLoading {
+		// Only allow Esc to cancel
+		if msg.Type == tea.KeyEsc {
+			a.sort.Reset()
+			a.mode = ModeNormal
+			return a, nil
+		}
+		return a, nil
+	}
+
 	// Handle cull results mode (group list)
 	if a.mode == ModeCullResults {
 		switch msg.Type {
@@ -1698,6 +1709,49 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			case "m":
 				// Move bookmark
 				return a.cullMoveItem()
+			}
+		}
+		return a, nil
+	}
+
+	// Handle sort results mode
+	if a.mode == ModeSortResults {
+		switch msg.Type {
+		case tea.KeyEsc:
+			a.mode = ModeNormal
+			a.sort.Reset()
+			return a, nil
+		case tea.KeyEnter:
+			return a.sortAcceptCurrent()
+		case tea.KeyDown:
+			a.sortNextUnprocessed()
+			return a, nil
+		case tea.KeyUp:
+			a.sortPrevUnprocessed()
+			return a, nil
+		}
+		// Handle vim-style navigation and commands
+		if msg.Type == tea.KeyRunes {
+			switch string(msg.Runes) {
+			case "j":
+				a.sortNextUnprocessed()
+				return a, nil
+			case "k":
+				a.sortPrevUnprocessed()
+				return a, nil
+			case "s":
+				a.sortSkipCurrent()
+				return a, nil
+			case "o":
+				return a.sortOpenCurrent()
+			case "e":
+				return a.sortEditCurrent()
+			case "d":
+				return a.sortDeleteCurrent()
+			case "q":
+				a.mode = ModeNormal
+				a.sort.Reset()
+				return a, nil
 			}
 		}
 		return a, nil
@@ -3479,4 +3533,145 @@ func (a *App) analyzeSortItems(items []Item) tea.Cmd {
 		// Store suggestions and complete
 		return sortResultsMsg{suggestions: suggestions}
 	}
+}
+
+// sortNextUnprocessed moves cursor to next unprocessed suggestion.
+func (a *App) sortNextUnprocessed() {
+	for i := a.sort.Cursor + 1; i < len(a.sort.Suggestions); i++ {
+		if !a.sort.Suggestions[i].Processed {
+			a.sort.Cursor = i
+			return
+		}
+	}
+}
+
+// sortPrevUnprocessed moves cursor to previous unprocessed suggestion.
+func (a *App) sortPrevUnprocessed() {
+	for i := a.sort.Cursor - 1; i >= 0; i-- {
+		if !a.sort.Suggestions[i].Processed {
+			a.sort.Cursor = i
+			return
+		}
+	}
+}
+
+// sortAcceptCurrent moves the item to the suggested folder.
+func (a *App) sortAcceptCurrent() (tea.Model, tea.Cmd) {
+	sug := a.sort.CurrentSuggestion()
+	if sug == nil || sug.Processed {
+		return a, nil
+	}
+
+	// Get or create the target folder
+	targetFolder, created := a.store.GetOrCreateFolderByPath(sug.SuggestedPath)
+	var targetFolderID *string
+	if targetFolder != nil {
+		targetFolderID = &targetFolder.ID
+	}
+
+	// Move the item
+	if sug.Item.IsFolder() {
+		folder := a.store.GetFolderByID(sug.Item.Folder.ID)
+		if folder != nil {
+			folder.ParentID = targetFolderID
+		}
+	} else {
+		bookmark := a.store.GetBookmarkByID(sug.Item.Bookmark.ID)
+		if bookmark != nil {
+			bookmark.FolderID = targetFolderID
+		}
+	}
+
+	sug.Processed = true
+
+	action := "Moved"
+	if created {
+		action = "Moved (created folder)"
+	}
+	cmd := a.setMessage(MessageInfo, action+": "+sug.Item.Title())
+
+	// Move to next or exit if done
+	if a.sort.UnprocessedCount() == 0 {
+		a.mode = ModeNormal
+		a.refreshItems()
+		a.sort.Reset()
+		return a, cmd
+	}
+	a.sortNextUnprocessed()
+	return a, cmd
+}
+
+// sortSkipCurrent marks the current suggestion as processed without moving.
+func (a *App) sortSkipCurrent() {
+	sug := a.sort.CurrentSuggestion()
+	if sug == nil || sug.Processed {
+		return
+	}
+
+	sug.Processed = true
+
+	if a.sort.UnprocessedCount() == 0 {
+		a.mode = ModeNormal
+		a.sort.Reset()
+		return
+	}
+	a.sortNextUnprocessed()
+}
+
+// sortOpenCurrent opens the current item's URL in browser.
+func (a *App) sortOpenCurrent() (tea.Model, tea.Cmd) {
+	sug := a.sort.CurrentSuggestion()
+	if sug == nil || sug.Item.IsFolder() {
+		return a, nil
+	}
+
+	return a, openURLCmd(sug.Item.Bookmark.URL)
+}
+
+// sortEditCurrent switches to move mode for manual folder selection.
+func (a *App) sortEditCurrent() (tea.Model, tea.Cmd) {
+	sug := a.sort.CurrentSuggestion()
+	if sug == nil || sug.Processed {
+		return a, nil
+	}
+
+	// Set up move state with this item
+	a.move.Reset()
+	a.move.ItemsToMove = []Item{sug.Item}
+	a.move.Folders = a.buildFolderPaths()
+	a.move.FilteredFolders = a.move.Folders
+	a.move.FolderIdx = a.findMoveFolderIndex(sug.SuggestedPath)
+	a.move.FilterInput.Focus()
+
+	a.mode = ModeMove
+	return a, nil
+}
+
+// sortDeleteCurrent deletes the current item.
+func (a *App) sortDeleteCurrent() (tea.Model, tea.Cmd) {
+	sug := a.sort.CurrentSuggestion()
+	if sug == nil || sug.Processed {
+		return a, nil
+	}
+
+	// Delete the item
+	if sug.Item.IsFolder() {
+		a.store.RemoveFolderByID(sug.Item.Folder.ID)
+	} else {
+		a.store.RemoveBookmarkByID(sug.Item.Bookmark.ID)
+	}
+
+	sug.Processed = true
+
+	cmd := a.setMessage(MessageInfo, "Deleted: "+sug.Item.Title())
+
+	// Move to next or exit if done
+	if a.sort.UnprocessedCount() == 0 {
+		a.mode = ModeNormal
+		a.refreshItems()
+		a.sort.Reset()
+		return a, cmd
+	}
+	a.sortNextUnprocessed()
+	return a, cmd
 }
