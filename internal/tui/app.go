@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/url"
 	"os"
@@ -31,6 +33,7 @@ var organizeProgressCounter int64
 // CullCache represents the cached cull results for disk persistence.
 type CullCache struct {
 	Timestamp time.Time         `json:"timestamp"`
+	Checksum  string            `json:"checksum"` // SHA256 of bookmark data to detect changes
 	Results   []CullCacheResult `json:"results"`
 }
 
@@ -44,8 +47,9 @@ type CullCacheResult struct {
 
 // OrganizeCache represents the cached organize results for disk persistence.
 type OrganizeCache struct {
-	Timestamp time.Time              `json:"timestamp"`
-	Results   []OrganizeCacheResult  `json:"results"`
+	Timestamp time.Time             `json:"timestamp"`
+	Checksum  string                `json:"checksum"` // SHA256 of bookmark data to detect changes
+	Results   []OrganizeCacheResult `json:"results"`
 }
 
 // OrganizeCacheResult is a serializable version of OrganizeSuggestion.
@@ -3220,6 +3224,31 @@ func organizeTickCmd() tea.Cmd {
 	})
 }
 
+// computeBookmarkChecksum computes a SHA256 hash of bookmark data.
+// Includes ID, URL, and FolderID to detect adds, deletes, URL changes, and moves.
+func (a *App) computeBookmarkChecksum() string {
+	// Collect bookmark data strings
+	data := make([]string, len(a.store.Bookmarks))
+	for i, b := range a.store.Bookmarks {
+		folderID := ""
+		if b.FolderID != nil {
+			folderID = *b.FolderID
+		}
+		data[i] = b.ID + "|" + b.URL + "|" + folderID
+	}
+
+	// Sort for consistent ordering
+	sort.Strings(data)
+
+	// Compute SHA256
+	h := sha256.New()
+	for _, d := range data {
+		h.Write([]byte(d))
+	}
+
+	return hex.EncodeToString(h.Sum(nil))
+}
+
 // cullCachePath returns the path to the cull cache file.
 func cullCachePath() (string, error) {
 	homeDir, err := os.UserHomeDir()
@@ -3252,6 +3281,7 @@ func (a *App) saveCullCache(results []culler.Result) error {
 
 	cache := CullCache{
 		Timestamp: time.Now(),
+		Checksum:  a.computeBookmarkChecksum(),
 		Results:   cacheResults,
 	}
 
@@ -3304,7 +3334,7 @@ func (a *App) loadCullCache() ([]culler.Result, time.Time, error) {
 	return results, cache.Timestamp, nil
 }
 
-// checkCullCache checks if a cache file exists and updates state.
+// checkCullCache checks if a cache file exists and validates its checksum.
 func (a *App) checkCullCache() {
 	path, err := cullCachePath()
 	if err != nil {
@@ -3312,14 +3342,27 @@ func (a *App) checkCullCache() {
 		return
 	}
 
-	info, err := os.Stat(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		a.cull.HasCache = false
 		return
 	}
 
+	var cache CullCache
+	if err := json.Unmarshal(data, &cache); err != nil {
+		a.cull.HasCache = false
+		return
+	}
+
+	// Validate checksum - if bookmarks changed, cache is stale
+	currentChecksum := a.computeBookmarkChecksum()
+	if cache.Checksum != "" && cache.Checksum != currentChecksum {
+		a.cull.HasCache = false
+		return
+	}
+
 	a.cull.HasCache = true
-	a.cull.CacheTime = info.ModTime()
+	a.cull.CacheTime = cache.Timestamp
 }
 
 // countCachedProblems returns the count of problematic bookmarks in cache.
@@ -3372,6 +3415,7 @@ func (a *App) saveOrganizeCache(suggestions []OrganizeSuggestion) error {
 
 	cache := OrganizeCache{
 		Timestamp: time.Now(),
+		Checksum:  a.computeBookmarkChecksum(),
 		Results:   cacheResults,
 	}
 
@@ -3441,7 +3485,7 @@ func (a *App) loadOrganizeCache() ([]OrganizeSuggestion, time.Time, error) {
 	return suggestions, cache.Timestamp, nil
 }
 
-// checkOrganizeCache checks if a cache file exists and updates state.
+// checkOrganizeCache checks if a cache file exists and validates its checksum.
 func (a *App) checkOrganizeCache() {
 	path, err := organizeCachePath()
 	if err != nil {
@@ -3449,14 +3493,27 @@ func (a *App) checkOrganizeCache() {
 		return
 	}
 
-	info, err := os.Stat(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		a.organize.HasCache = false
 		return
 	}
 
+	var cache OrganizeCache
+	if err := json.Unmarshal(data, &cache); err != nil {
+		a.organize.HasCache = false
+		return
+	}
+
+	// Validate checksum - if bookmarks changed, cache is stale
+	currentChecksum := a.computeBookmarkChecksum()
+	if cache.Checksum != "" && cache.Checksum != currentChecksum {
+		a.organize.HasCache = false
+		return
+	}
+
 	a.organize.HasCache = true
-	a.organize.CacheTime = info.ModTime()
+	a.organize.CacheTime = cache.Timestamp
 }
 
 // countCachedOrganizeSuggestions returns the count of suggestions in cache.
