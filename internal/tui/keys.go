@@ -32,7 +32,7 @@ type KeyMap struct {
 	ClearSelect   key.Binding
 	Cull          key.Binding
 	Organize      key.Binding
-	Settings      key.Binding
+	Toggle        key.Binding
 	Help          key.Binding
 	Quit          key.Binding
 }
@@ -105,8 +105,8 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("e", "edit"),
 		),
 		EditTags: key.NewBinding(
-			key.WithKeys("t"),
-			key.WithHelp("t", "edit tags"),
+			key.WithKeys("T"),
+			key.WithHelp("T", "edit tags"),
 		),
 		Open: key.NewBinding(
 			key.WithKeys("o"),
@@ -152,9 +152,9 @@ func DefaultKeyMap() KeyMap {
 			key.WithKeys("O"),
 			key.WithHelp("O", "organize"),
 		),
-		Settings: key.NewBinding(
-			key.WithKeys("."),
-			key.WithHelp(".", "settings"),
+		Toggle: key.NewBinding(
+			key.WithKeys("t"),
+			key.WithHelp("t", "toggle"),
 		),
 		Help: key.NewBinding(
 			key.WithKeys("?"),

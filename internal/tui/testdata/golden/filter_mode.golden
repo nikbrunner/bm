@@ -20,5 +20,5 @@
   ┃                        ┃┃                        ┃┃                        ┃  
   ┗━━━━━━━━━━━━━━━━━━━━━━━━┛┗━━━━━━━━━━━━━━━━━━━━━━━━┛┗━━━━━━━━━━━━━━━━━━━━━━━━┛  
                                                                                   
-  [ord:man] [cfm:on]                                                              
+  Toggle to:order tc:confirm  [ord:man] [cfm:on]                                  
   Local  type:filter Enter:apply Esc:cancel                                       

@@ -364,15 +364,6 @@ func (a App) renderModal() string {
 			}
 		}
 
-	case ModeSettings:
-		// Simple inline settings prompt
-		title.WriteString("Settings\n\n")
-		content.WriteString(a.renderHintsInline([]Hint{
-			{Key: "o", Desc: "order"},
-			{Key: "c", Desc: "confirm"},
-			{Key: "Esc", Desc: "cancel"},
-		}))
-
 	case ModeFilter:
 		// ModeFilter is handled inline in renderCurrentPane, not as a modal
 		// This case should not be reached
@@ -765,8 +756,6 @@ func (a App) renderFuzzyItem(match fuzzyMatch, selected bool, maxWidth int) stri
 }
 
 func (a App) renderHelpBar() string {
-	lineStyle := lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#888888", Dark: "#606060"})
-
 	var lines []string
 
 	// Line 1: Empty spacer OR message (message replaces the gap)
@@ -776,9 +765,9 @@ func (a App) renderHelpBar() string {
 		lines = append(lines, "") // Empty line provides gap when no message
 	}
 
-	// Line 2: Toggle states (only in normal/filter modes)
+	// Line 2: Toggle hints and states (only in normal/filter modes)
 	if a.mode == ModeNormal || a.mode == ModeFilter {
-		lines = append(lines, lineStyle.Render(a.renderStatusToggles()))
+		lines = append(lines, a.renderStatusToggles())
 	}
 
 	// Line 3: Local (contextual) keyboard hints
@@ -842,9 +831,14 @@ func (a App) renderMessageLine() string {
 	return msgStyle.Render(prefix + a.messageText)
 }
 
-// renderStatusToggles renders the [ord:X] [cfm:X] indicators.
+// renderStatusToggles renders the toggle hints and [ord:X] [cfm:X] indicators.
 func (a App) renderStatusToggles() string {
 	var status strings.Builder
+
+	// Toggle hints
+	status.WriteString(a.styles.HintLabel.Render("Toggle "))
+	status.WriteString(a.styles.HintKey.Render("to") + ":" + a.styles.HintDesc.Render("order") + " ")
+	status.WriteString(a.styles.HintKey.Render("tc") + ":" + a.styles.HintDesc.Render("confirm") + "  ")
 
 	// Sort mode indicator (abbreviated)
 	sortLabels := map[SortMode]string{

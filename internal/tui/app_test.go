@@ -913,8 +913,8 @@ func TestApp_EditTags_OpenModal(t *testing.T) {
 
 	app := tui.NewApp(tui.AppParams{Store: store})
 
-	// Press 't' to open edit tags modal
-	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	// Press 'T' to open edit tags modal
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'T'}})
 	app = updated.(tui.App)
 
 	// Should be in edit tags mode
@@ -933,13 +933,13 @@ func TestApp_EditTags_OnFolder(t *testing.T) {
 
 	app := tui.NewApp(tui.AppParams{Store: store})
 
-	// Press 't' on a folder
-	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	// Press 'T' on a folder
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'T'}})
 	app = updated.(tui.App)
 
 	// Should stay in normal mode (folders don't have tags)
 	if app.Mode() != tui.ModeNormal {
-		t.Error("pressing 't' on folder should do nothing")
+		t.Error("pressing 'T' on folder should do nothing")
 	}
 }
 
@@ -954,7 +954,7 @@ func TestApp_EditTags_Cancel(t *testing.T) {
 	app := tui.NewApp(tui.AppParams{Store: store})
 
 	// Open tags modal
-	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'T'}})
 	app = updated.(tui.App)
 
 	// Press Esc to cancel
@@ -983,7 +983,7 @@ func TestApp_EditTags_Submit(t *testing.T) {
 	app := tui.NewApp(tui.AppParams{Store: store})
 
 	// Open tags modal
-	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'T'}})
 	app = updated.(tui.App)
 
 	// Clear and type new tags (comma-separated)
@@ -1212,38 +1212,38 @@ func TestApp_SortMode_Cycle(t *testing.T) {
 		t.Fatal("expected to start at SortManual")
 	}
 
-	// Helper to send '.o' sequence (dot namespace for order)
+	// Helper to send 'to' sequence (toggle order)
 	cycleOrder := func(a tui.App) tui.App {
-		// Press '.' to enter settings mode
-		updated, _ := a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'.'}})
+		// Press 't' to start toggle sequence
+		updated, _ := a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
 		a = updated.(tui.App)
 		// Press 'o' to cycle order
 		updated, _ = a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
 		return updated.(tui.App)
 	}
 
-	// Press '.o' to cycle to alpha
+	// Press 'to' to cycle to alpha
 	app = cycleOrder(app)
 	if app.SortMode() != tui.SortAlpha {
-		t.Errorf("expected SortAlpha after first '.o', got %d", app.SortMode())
+		t.Errorf("expected SortAlpha after first 'to', got %d", app.SortMode())
 	}
 
-	// Press '.o' to cycle to date created
+	// Press 'to' to cycle to date created
 	app = cycleOrder(app)
 	if app.SortMode() != tui.SortCreated {
-		t.Errorf("expected SortCreated after second '.o', got %d", app.SortMode())
+		t.Errorf("expected SortCreated after second 'to', got %d", app.SortMode())
 	}
 
-	// Press '.o' to cycle to date visited
+	// Press 'to' to cycle to date visited
 	app = cycleOrder(app)
 	if app.SortMode() != tui.SortVisited {
-		t.Errorf("expected SortVisited after third '.o', got %d", app.SortMode())
+		t.Errorf("expected SortVisited after third 'to', got %d", app.SortMode())
 	}
 
-	// Press '.o' to cycle back to manual
+	// Press 'to' to cycle back to manual
 	app = cycleOrder(app)
 	if app.SortMode() != tui.SortManual {
-		t.Errorf("expected SortManual after fourth '.o', got %d", app.SortMode())
+		t.Errorf("expected SortManual after fourth 'to', got %d", app.SortMode())
 	}
 }
 
@@ -1262,8 +1262,8 @@ func TestApp_SortMode_Alpha_SortsFoldersAndBookmarks(t *testing.T) {
 
 	app := tui.NewApp(tui.AppParams{Store: store})
 
-	// Cycle to alpha sort using '.o' sequence
-	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'.'}})
+	// Cycle to alpha sort using 'to' sequence
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
 	app = updated.(tui.App)
 	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
 	app = updated.(tui.App)
@@ -1305,9 +1305,9 @@ func TestApp_SortMode_DateCreated(t *testing.T) {
 
 	app := tui.NewApp(tui.AppParams{Store: store})
 
-	// Helper to send '.o' sequence
+	// Helper to send 'to' sequence
 	cycleOrder := func(a tui.App) tui.App {
-		updated, _ := a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'.'}})
+		updated, _ := a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
 		a = updated.(tui.App)
 		updated, _ = a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
 		return updated.(tui.App)
@@ -1352,9 +1352,9 @@ func TestApp_SortMode_DateVisited(t *testing.T) {
 
 	app := tui.NewApp(tui.AppParams{Store: store})
 
-	// Helper to send '.o' sequence
+	// Helper to send 'to' sequence
 	cycleOrder := func(a tui.App) tui.App {
-		updated, _ := a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'.'}})
+		updated, _ := a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
 		a = updated.(tui.App)
 		updated, _ = a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
 		return updated.(tui.App)
