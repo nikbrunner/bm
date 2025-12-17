@@ -115,9 +115,9 @@ func DefaultConfig() LayoutConfig {
 		},
 		Modal: ModalConfig{
 			DefaultWidthPercent:    40,
-			LargeWidthPercent:      50,
+			LargeWidthPercent:      70,
 			MinWidth:               50,
-			MaxWidth:               80,
+			MaxWidth:               120,
 			MoveMaxVisible:         8,
 			QuickAddFoldersVisible: 5,
 			HelpLeftColumnWidth:    18,
