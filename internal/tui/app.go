@@ -114,6 +114,7 @@ const (
 	ModeOrganizeMenu         // Menu to choose fresh vs cached organize
 	ModeOrganizeLoading      // Analyzing items for organize suggestions
 	ModeOrganizeResults      // List of suggested organization changes
+	ModeSettings             // Waiting for settings key after '.' press
 )
 
 // hasTextInput returns true if the mode has an active text input where 'q' shouldn't quit.
@@ -981,9 +982,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Organize: analyze current item or folder contents
 			return a.startOrganize()
 
-		case key.Matches(msg, a.keys.ToggleConfirm):
-			// Toggle delete confirmation
-			a.confirmDelete = !a.confirmDelete
+		case key.Matches(msg, a.keys.Settings):
+			// Enter settings mode (dot namespace)
+			a.mode = ModeSettings
 			return a, nil
 
 		case key.Matches(msg, a.keys.AddBookmark):
@@ -1249,11 +1250,6 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.modal.TagSuggestions = nil
 			a.modal.TagSuggestionIdx = -1
 			return a, a.modal.TagsInput.Focus()
-
-		case key.Matches(msg, a.keys.Sort):
-			// Cycle through sort modes
-			a.browser.SortMode = (a.browser.SortMode + 1) % 4
-			a.refreshItems()
 
 		case key.Matches(msg, a.keys.YankURL):
 			// Yank URL to clipboard
@@ -1577,6 +1573,30 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		// q quits (handled globally above)
 		return a, nil
+	}
+
+	// Handle settings mode (dot namespace)
+	if a.mode == ModeSettings {
+		switch msg.String() {
+		case "o":
+			// Cycle through order/sort modes
+			a.browser.SortMode = (a.browser.SortMode + 1) % 4
+			a.refreshItems()
+			a.mode = ModeNormal
+			return a, nil
+		case "c":
+			// Toggle delete confirmation
+			a.confirmDelete = !a.confirmDelete
+			a.mode = ModeNormal
+			if a.confirmDelete {
+				return a, a.setMessage(MessageInfo, "Delete confirmation: ON")
+			}
+			return a, a.setMessage(MessageInfo, "Delete confirmation: OFF")
+		default:
+			// Any other key cancels settings mode
+			a.mode = ModeNormal
+			return a, nil
+		}
 	}
 
 	// Handle cull menu mode (fresh vs cached)

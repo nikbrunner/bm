@@ -70,6 +70,7 @@ func (a App) getGlobalHints() []Hint {
 		{Key: "L", Desc: "read later"},
 		{Key: "a/A", Desc: "add"},
 		{Key: "C", Desc: "cull"},
+		{Key: ".", Desc: "settings"},
 		{Key: "?", Desc: "help"},
 		{Key: "q", Desc: "quit"},
 	}
@@ -123,6 +124,8 @@ func (a App) getContextualHints() HintSet {
 		return a.getOrganizeLoadingHints()
 	case ModeOrganizeResults:
 		return a.getOrganizeResultsHints()
+	case ModeSettings:
+		return a.getSettingsHints()
 	default:
 		return HintSet{}
 	}
@@ -423,6 +426,19 @@ func (a App) getOrganizeResultsHints() HintSet {
 		},
 		System: []Hint{
 			{Key: "Esc", Desc: "back"},
+		},
+	}
+}
+
+// getSettingsHints returns hints for ModeSettings (dot namespace).
+func (a App) getSettingsHints() HintSet {
+	return HintSet{
+		Action: []Hint{
+			{Key: "o", Desc: "order"},
+			{Key: "c", Desc: "confirm"},
+		},
+		System: []Hint{
+			{Key: "Esc", Desc: "cancel"},
 		},
 	}
 }

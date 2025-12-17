@@ -364,6 +364,15 @@ func (a App) renderModal() string {
 			}
 		}
 
+	case ModeSettings:
+		// Simple inline settings prompt
+		title.WriteString("Settings\n\n")
+		content.WriteString(a.renderHintsInline([]Hint{
+			{Key: "o", Desc: "order"},
+			{Key: "c", Desc: "confirm"},
+			{Key: "Esc", Desc: "cancel"},
+		}))
+
 	case ModeFilter:
 		// ModeFilter is handled inline in renderCurrentPane, not as a modal
 		// This case should not be reached

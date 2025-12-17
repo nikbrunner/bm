@@ -1212,32 +1212,38 @@ func TestApp_SortMode_Cycle(t *testing.T) {
 		t.Fatal("expected to start at SortManual")
 	}
 
-	// Press 'o' to cycle to alpha
-	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
-	app = updated.(tui.App)
+	// Helper to send '.o' sequence (dot namespace for order)
+	cycleOrder := func(a tui.App) tui.App {
+		// Press '.' to enter settings mode
+		updated, _ := a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'.'}})
+		a = updated.(tui.App)
+		// Press 'o' to cycle order
+		updated, _ = a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+		return updated.(tui.App)
+	}
+
+	// Press '.o' to cycle to alpha
+	app = cycleOrder(app)
 	if app.SortMode() != tui.SortAlpha {
-		t.Errorf("expected SortAlpha after first 'o', got %d", app.SortMode())
+		t.Errorf("expected SortAlpha after first '.o', got %d", app.SortMode())
 	}
 
-	// Press 'o' to cycle to date created
-	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
-	app = updated.(tui.App)
+	// Press '.o' to cycle to date created
+	app = cycleOrder(app)
 	if app.SortMode() != tui.SortCreated {
-		t.Errorf("expected SortCreated after second 'o', got %d", app.SortMode())
+		t.Errorf("expected SortCreated after second '.o', got %d", app.SortMode())
 	}
 
-	// Press 'o' to cycle to date visited
-	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
-	app = updated.(tui.App)
+	// Press '.o' to cycle to date visited
+	app = cycleOrder(app)
 	if app.SortMode() != tui.SortVisited {
-		t.Errorf("expected SortVisited after third 'o', got %d", app.SortMode())
+		t.Errorf("expected SortVisited after third '.o', got %d", app.SortMode())
 	}
 
-	// Press 'o' to cycle back to manual
-	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
-	app = updated.(tui.App)
+	// Press '.o' to cycle back to manual
+	app = cycleOrder(app)
 	if app.SortMode() != tui.SortManual {
-		t.Errorf("expected SortManual after fourth 'o', got %d", app.SortMode())
+		t.Errorf("expected SortManual after fourth '.o', got %d", app.SortMode())
 	}
 }
 
@@ -1256,8 +1262,10 @@ func TestApp_SortMode_Alpha_SortsFoldersAndBookmarks(t *testing.T) {
 
 	app := tui.NewApp(tui.AppParams{Store: store})
 
-	// Cycle to alpha sort
-	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	// Cycle to alpha sort using '.o' sequence
+	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'.'}})
+	app = updated.(tui.App)
+	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
 	app = updated.(tui.App)
 
 	items := app.Items()
@@ -1297,11 +1305,17 @@ func TestApp_SortMode_DateCreated(t *testing.T) {
 
 	app := tui.NewApp(tui.AppParams{Store: store})
 
+	// Helper to send '.o' sequence
+	cycleOrder := func(a tui.App) tui.App {
+		updated, _ := a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'.'}})
+		a = updated.(tui.App)
+		updated, _ = a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+		return updated.(tui.App)
+	}
+
 	// Cycle to date created sort (manual -> alpha -> created)
-	updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
-	app = updated.(tui.App)
-	updated, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
-	app = updated.(tui.App)
+	app = cycleOrder(app)
+	app = cycleOrder(app)
 
 	items := app.Items()
 
@@ -1338,10 +1352,17 @@ func TestApp_SortMode_DateVisited(t *testing.T) {
 
 	app := tui.NewApp(tui.AppParams{Store: store})
 
+	// Helper to send '.o' sequence
+	cycleOrder := func(a tui.App) tui.App {
+		updated, _ := a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'.'}})
+		a = updated.(tui.App)
+		updated, _ = a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+		return updated.(tui.App)
+	}
+
 	// Cycle to date visited sort (manual -> alpha -> created -> visited)
 	for i := 0; i < 3; i++ {
-		updated, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
-		app = updated.(tui.App)
+		app = cycleOrder(app)
 	}
 
 	items := app.Items()

@@ -33,6 +33,7 @@ type KeyMap struct {
 	ClearSelect   key.Binding
 	Cull          key.Binding
 	Organize      key.Binding
+	Settings      key.Binding
 	Help          key.Binding
 	Quit          key.Binding
 }
@@ -155,6 +156,10 @@ func DefaultKeyMap() KeyMap {
 		Organize: key.NewBinding(
 			key.WithKeys("O"),
 			key.WithHelp("O", "organize"),
+		),
+		Settings: key.NewBinding(
+			key.WithKeys("."),
+			key.WithHelp(".", "settings"),
 		),
 		Help: key.NewBinding(
 			key.WithKeys("?"),
