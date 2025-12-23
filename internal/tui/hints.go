@@ -189,10 +189,14 @@ func (a App) getSearchModeHints() HintSet {
 			{Key: "j/k", Desc: "move"},
 		},
 		Action: []Hint{
-			{Key: "Enter", Desc: "open"},
+			{Key: "Enter", Desc: "go to"},
+			{Key: "^o", Desc: "open"},
+			{Key: "^e", Desc: "edit"},
+			{Key: "^y", Desc: "yank"},
+			{Key: "^d", Desc: "del"},
 		},
 		System: []Hint{
-			{Key: "Esc", Desc: "cancel"},
+			{Key: "Esc", Desc: "back"},
 		},
 	}
 }

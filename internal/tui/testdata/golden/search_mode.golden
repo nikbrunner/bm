@@ -21,4 +21,4 @@
                                                                                 
                                                                                 
                                                                                 
-Local  j/k:move Enter:open Esc:cancel                                           
+Local  j/k:move Enter:go to ^o:open ^e:edit ^y:yank ^d:del Esc:back             

@@ -2087,7 +2087,115 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 
-		// Handle j/k for vim-style navigation
+		// Handle Ctrl+key actions (don't conflict with typing)
+		if msg.Type == tea.KeyCtrlO {
+			// Open bookmark in browser
+			if len(a.search.FuzzyMatches) > 0 && a.search.FuzzyCursor < len(a.search.FuzzyMatches) {
+				selectedItem := a.search.FuzzyMatches[a.search.FuzzyCursor].Item
+				if !selectedItem.IsFolder() {
+					bookmark := a.store.GetBookmarkByID(selectedItem.Bookmark.ID)
+					if bookmark != nil {
+						now := time.Now()
+						bookmark.VisitedAt = &now
+						a.saveStore()
+					}
+					return a, openURLCmd(selectedItem.Bookmark.URL)
+				}
+			}
+			return a, nil
+		}
+
+		if msg.Type == tea.KeyCtrlY {
+			// Yank URL to clipboard
+			if len(a.search.FuzzyMatches) > 0 && a.search.FuzzyCursor < len(a.search.FuzzyMatches) {
+				selectedItem := a.search.FuzzyMatches[a.search.FuzzyCursor].Item
+				if !selectedItem.IsFolder() {
+					if err := clipboard.WriteAll(selectedItem.Bookmark.URL); err != nil {
+						return a, func() tea.Msg { return clipboardErrorMsg{err} }
+					}
+					cmd := a.setMessage(MessageSuccess, "Copied URL to clipboard")
+					return a, cmd
+				}
+			}
+			return a, nil
+		}
+
+		if msg.Type == tea.KeyCtrlE {
+			// Edit bookmark or folder
+			if len(a.search.FuzzyMatches) > 0 && a.search.FuzzyCursor < len(a.search.FuzzyMatches) {
+				selectedItem := a.search.FuzzyMatches[a.search.FuzzyCursor].Item
+				if selectedItem.IsFolder() {
+					a.mode = ModeEditFolder
+					a.modal.EditItemID = selectedItem.Folder.ID
+					a.modal.TitleInput.SetValue(selectedItem.Folder.Name)
+					a.modal.TitleInput.Focus()
+					return a, a.modal.TitleInput.Focus()
+				} else {
+					a.mode = ModeEditBookmark
+					a.modal.EditItemID = selectedItem.Bookmark.ID
+					a.modal.TitleInput.SetValue(selectedItem.Bookmark.Title)
+					a.modal.URLInput.SetValue(selectedItem.Bookmark.URL)
+					a.modal.TitleInput.Focus()
+					return a, a.modal.TitleInput.Focus()
+				}
+			}
+			return a, nil
+		}
+
+		if msg.Type == tea.KeyCtrlD {
+			// Delete item
+			if len(a.search.FuzzyMatches) > 0 && a.search.FuzzyCursor < len(a.search.FuzzyMatches) {
+				selectedItem := a.search.FuzzyMatches[a.search.FuzzyCursor].Item
+				if a.confirmDelete {
+					a.mode = ModeConfirmDelete
+					a.modal.EditItemID = selectedItem.ID()
+					a.modal.CutMode = false
+				} else {
+					if selectedItem.IsFolder() {
+						a.store.RemoveFolderByID(selectedItem.Folder.ID)
+					} else {
+						a.store.RemoveBookmarkByID(selectedItem.Bookmark.ID)
+					}
+					a.saveStore()
+					a.search.AllItems = a.getItemsForSource(a.search.Source)
+					a.updateFuzzyMatches()
+					if a.search.FuzzyCursor >= len(a.search.FuzzyMatches) && a.search.FuzzyCursor > 0 {
+						a.search.FuzzyCursor--
+					}
+				}
+			}
+			return a, nil
+		}
+
+		if msg.Type == tea.KeyCtrlX {
+			// Cut item (delete + yank to buffer)
+			if len(a.search.FuzzyMatches) > 0 && a.search.FuzzyCursor < len(a.search.FuzzyMatches) {
+				selectedItem := a.search.FuzzyMatches[a.search.FuzzyCursor].Item
+				if a.confirmDelete {
+					a.mode = ModeConfirmDelete
+					a.modal.EditItemID = selectedItem.ID()
+					a.modal.CutMode = true
+				} else {
+					a.yankedItems = []Item{selectedItem}
+					if selectedItem.IsFolder() {
+						a.store.RemoveFolderByID(selectedItem.Folder.ID)
+					} else {
+						a.store.RemoveBookmarkByID(selectedItem.Bookmark.ID)
+					}
+					a.saveStore()
+					a.search.AllItems = a.getItemsForSource(a.search.Source)
+					a.updateFuzzyMatches()
+					if a.search.FuzzyCursor >= len(a.search.FuzzyMatches) && a.search.FuzzyCursor > 0 {
+						a.search.FuzzyCursor--
+					}
+					cmd := a.setMessage(MessageSuccess, "Cut to clipboard")
+					return a, cmd
+				}
+			}
+			return a, nil
+		}
+
+		// Handle vim-style navigation (j/k don't conflict with typical searches)
 		if msg.Type == tea.KeyRunes {
 			switch string(msg.Runes) {
 			case "j":
