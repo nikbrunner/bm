@@ -4,37 +4,38 @@ import "github.com/charmbracelet/bubbles/key"
 
 // KeyMap defines all key bindings for the application.
 type KeyMap struct {
-	Up            key.Binding
-	Down          key.Binding
-	Left          key.Binding
-	Right         key.Binding
-	Top           key.Binding
-	Bottom        key.Binding
-	Yank          key.Binding
-	Delete        key.Binding
-	Cut           key.Binding
-	PasteAfter    key.Binding
-	PasteBefore   key.Binding
-	AddBookmark   key.Binding
-	AddFolder     key.Binding
-	QuickAdd      key.Binding
-	ReadLater     key.Binding
-	Edit          key.Binding
-	EditTags      key.Binding
-	Open          key.Binding
-	Search        key.Binding
-	Filter        key.Binding
-	YankURL       key.Binding
-	Pin           key.Binding
-	Move          key.Binding
-	Select        key.Binding
-	SelectVisual  key.Binding
-	ClearSelect   key.Binding
-	Cull          key.Binding
-	Organize      key.Binding
-	Toggle        key.Binding
-	Help          key.Binding
-	Quit          key.Binding
+	Up           key.Binding
+	Down         key.Binding
+	Left         key.Binding
+	Right        key.Binding
+	Top          key.Binding
+	Bottom       key.Binding
+	Yank         key.Binding
+	Delete       key.Binding
+	Cut          key.Binding
+	PasteAfter   key.Binding
+	PasteBefore  key.Binding
+	AddBookmark  key.Binding
+	AddFolder    key.Binding
+	QuickAdd     key.Binding
+	ReadLater    key.Binding
+	Edit         key.Binding
+	EditTags     key.Binding
+	Open         key.Binding
+	Search       key.Binding
+	Filter       key.Binding
+	YankURL      key.Binding
+	Pin          key.Binding
+	Move         key.Binding
+	Select       key.Binding
+	SelectVisual key.Binding
+	ClearSelect  key.Binding
+	Cull         key.Binding
+	Organize     key.Binding
+	Recent       key.Binding
+	Toggle       key.Binding
+	Help         key.Binding
+	Quit         key.Binding
 }
 
 // DefaultKeyMap returns the default vim-style key bindings.
@@ -151,6 +152,10 @@ func DefaultKeyMap() KeyMap {
 		Organize: key.NewBinding(
 			key.WithKeys("O"),
 			key.WithHelp("O", "organize"),
+		),
+		Recent: key.NewBinding(
+			key.WithKeys("R"),
+			key.WithHelp("R", "recent bookmarks"),
 		),
 		Toggle: key.NewBinding(
 			key.WithKeys("t"),

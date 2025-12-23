@@ -620,6 +620,15 @@ func (a App) renderFuzzyFinder() string {
 	listItemWidth := layout.CalculateItemWidth(listWidth, a.layoutConfig.Pane)
 	previewItemWidth := layout.CalculateItemWidth(previewWidth, a.layoutConfig.Pane)
 
+	// Determine title based on source
+	var title string
+	switch a.search.Source {
+	case SourceRecent:
+		title = "Recent Bookmarks"
+	default:
+		title = "Find"
+	}
+
 	// Build results list
 	var results strings.Builder
 	if len(a.search.FuzzyMatches) == 0 {
@@ -630,7 +639,9 @@ func (a App) renderFuzzyFinder() string {
 				break
 			}
 			isSelected := i == a.search.FuzzyCursor
-			line := a.renderFuzzyItem(match, isSelected, listItemWidth)
+			// For SourceRecent, show folder path; for SourceAll, no path
+			showFolderPath := a.search.Source == SourceRecent
+			line := a.renderFuzzyItemWithPath(match, isSelected, listItemWidth, showFolderPath)
 			results.WriteString(line + "\n")
 		}
 	}
@@ -686,7 +697,7 @@ func (a App) renderFuzzyFinder() string {
 	}
 
 	content := lipgloss.JoinVertical(lipgloss.Left,
-		a.styles.Title.Render("Find")+"  "+a.styles.Empty.Render(countStr),
+		a.styles.Title.Render(title)+"  "+a.styles.Empty.Render(countStr),
 		"",
 		"> "+a.search.Input.Value()+"█",
 		"",
@@ -705,14 +716,41 @@ func (a App) renderFuzzyFinder() string {
 	return lipgloss.JoinVertical(lipgloss.Left, main, a.renderHelpBar())
 }
 
-// renderFuzzyItem renders a single item in the fuzzy results with highlighting.
-func (a App) renderFuzzyItem(match fuzzyMatch, selected bool, maxWidth int) string {
+// renderFuzzyItemWithPath renders a fuzzy item with an optional folder path column.
+// When showPath is true, the folder path is shown right-aligned next to the title.
+func (a App) renderFuzzyItemWithPath(match fuzzyMatch, selected bool, maxWidth int, showPath bool) string {
 	var suffix string
 	if match.Item.IsFolder() {
 		suffix = "/"
 	}
 
 	title := match.Item.Title()
+
+	// Get folder path if showing paths (for bookmarks only)
+	var folderPath string
+	if showPath && !match.Item.IsFolder() {
+		folderID := match.Item.Bookmark.FolderID
+		if folderID == nil {
+			folderPath = "─" // Root-level bookmark
+		} else {
+			path := a.store.GetFolderPath(folderID)
+			// Remove leading slash if present
+			if len(path) > 0 && path[0] == '/' {
+				path = path[1:]
+			}
+			folderPath = path
+		}
+	}
+
+	// Calculate space for path column (roughly 30% of width, min 10 chars)
+	pathColWidth := 0
+	if showPath && folderPath != "" {
+		pathColWidth = maxWidth * 30 / 100
+		if pathColWidth < 10 {
+			pathColWidth = 10
+		}
+	}
+	titleMaxWidth := maxWidth - pathColWidth
 
 	// Build highlighted string with ANSI codes for matched characters
 	var line strings.Builder
@@ -726,7 +764,6 @@ func (a App) renderFuzzyItem(match fuzzyMatch, selected bool, maxWidth int) stri
 	for i, r := range title {
 		if matchSet[i] {
 			// Highlight matched character (bold/underline)
-			// Use \033[22;24m to reset only bold/underline, preserving background color
 			line.WriteString("\033[1;4m")
 			line.WriteRune(r)
 			line.WriteString("\033[22;24m")
@@ -738,15 +775,42 @@ func (a App) renderFuzzyItem(match fuzzyMatch, selected bool, maxWidth int) stri
 
 	result := line.String()
 
-	// Use ANSI-aware truncation to preserve highlighting
-	if layout.VisibleLength(result) > maxWidth {
-		result = layout.TruncateANSIAware(result, maxWidth, a.layoutConfig.Text)
+	// Truncate title if needed
+	if layout.VisibleLength(result) > titleMaxWidth {
+		result = layout.TruncateANSIAware(result, titleMaxWidth, a.layoutConfig.Text)
 	}
 
-	// Pad to full width for consistent selection highlighting
+	// Pad title to fixed width
 	visibleLen := layout.VisibleLength(result)
-	if visibleLen < maxWidth {
-		result += strings.Repeat(" ", maxWidth-visibleLen)
+	if visibleLen < titleMaxWidth {
+		result += strings.Repeat(" ", titleMaxWidth-visibleLen)
+	}
+
+	// Add folder path column if showing paths
+	if showPath && folderPath != "" && pathColWidth > 3 {
+		pathRunes := []rune(folderPath)
+		pathVisualLen := len(pathRunes) // visual length in characters
+
+		// Truncate path from left if needed (keep rightmost part with ellipsis)
+		if pathVisualLen > pathColWidth-1 {
+			keepLen := pathColWidth - 2 // space for "…" and at least one space padding
+			if keepLen > 0 && keepLen < pathVisualLen {
+				folderPath = "…" + string(pathRunes[pathVisualLen-keepLen:])
+				pathVisualLen = keepLen + 1 // ellipsis + kept chars
+			} else {
+				folderPath = "…"
+				pathVisualLen = 1
+			}
+		}
+
+		// Pad path to column width (right-align)
+		padding := pathColWidth - pathVisualLen
+		if padding < 0 {
+			padding = 0
+		}
+		pathPadded := strings.Repeat(" ", padding) + folderPath
+		// Apply dimmed style to path
+		result += a.styles.Empty.Render(pathPadded)
 	}
 
 	if selected {
@@ -1020,6 +1084,7 @@ func (a App) renderHelpOverlay() string {
 	left.WriteString("Y    yank url\n")
 	left.WriteString("*    pin/unpin\n")
 	left.WriteString("s    search\n")
+	left.WriteString("R    recent\n")
 	left.WriteString("/    filter\n")
 	left.WriteString("o    sort mode\n")
 	left.WriteString("m    move\n")

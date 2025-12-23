@@ -65,6 +65,7 @@ func (h HintSet) All() []Hint {
 func (a App) getGlobalHints() []Hint {
 	return []Hint{
 		{Key: "s", Desc: "search"},
+		{Key: "R", Desc: "recent"},
 		{Key: "/", Desc: "filter"},
 		{Key: "i", Desc: "AI add"},
 		{Key: "L", Desc: "read later"},
@@ -427,4 +428,3 @@ func (a App) getOrganizeResultsHints() HintSet {
 		},
 	}
 }
-

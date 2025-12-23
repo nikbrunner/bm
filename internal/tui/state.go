@@ -9,6 +9,14 @@ import (
 	"github.com/nikbrunner/bm/internal/tui/layout"
 )
 
+// ListSource represents the data source for the fullscreen list mode.
+type ListSource int
+
+const (
+	SourceAll    ListSource = iota // All items (folders + bookmarks), fuzzy search behavior
+	SourceRecent                   // Bookmarks only, sorted by CreatedAt descending
+)
+
 // QuickAddState holds state for the AI-powered quick add feature.
 type QuickAddState struct {
 	Input           textinput.Model // URL input
@@ -58,13 +66,13 @@ type QuickAddCreateFolderState struct {
 
 // MoveState holds state for moving items to different folders.
 type MoveState struct {
-	FilterInput         textinput.Model      // Filter input for folder search
-	Folders             []string             // All folder paths
-	FilteredFolders     []string             // Filtered folder paths based on search
-	FolderIdx           int                  // Selected folder index in filtered list
-	ItemsToMove         []Item               // Items to move (for batch operations)
-	ReturnMode          Mode                 // Mode to return to after move (0 = ModeNormal)
-	OrganizeSuggestion  *OrganizeSuggestion  // If set, mark as processed after move
+	FilterInput        textinput.Model     // Filter input for folder search
+	Folders            []string            // All folder paths
+	FilteredFolders    []string            // Filtered folder paths based on search
+	FolderIdx          int                 // Selected folder index in filtered list
+	ItemsToMove        []Item              // Items to move (for batch operations)
+	ReturnMode         Mode                // Mode to return to after move (0 = ModeNormal)
+	OrganizeSuggestion *OrganizeSuggestion // If set, mark as processed after move
 }
 
 // NewMoveState creates a new MoveState with initialized input.
@@ -89,13 +97,14 @@ func (m *MoveState) Reset() {
 	m.OrganizeSuggestion = nil
 }
 
-// SearchState holds state for global search and local filtering.
+// SearchState holds state for fullscreen list mode (global search and recent view) and local filtering.
 type SearchState struct {
-	// Global search
-	Input        textinput.Model // Search input
+	// Fullscreen list mode (ModeSearch)
+	Source       ListSource      // Current data source (SourceAll or SourceRecent)
+	Input        textinput.Model // Search/filter input
 	FuzzyMatches []fuzzyMatch    // Current fuzzy match results
 	FuzzyCursor  int             // Selected index in fuzzy results
-	AllItems     []Item          // All items for global search
+	AllItems     []Item          // Base items for current source
 
 	// Local filter
 	FilterInput   textinput.Model // Filter input for current folder

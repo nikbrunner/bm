@@ -15,10 +15,10 @@
   Y    yank url                                                                 
   *    pin/unpin      select                                                    
   s    search         v    select item                                          
-  /    filter         V    visual mode                                          
-  o    sort mode      Esc  clear select                                         
-  m    move                                                                     
-                      tools                                                     
+  R    recent         V    visual mode                                          
+  /    filter         Esc  clear select                                         
+  o    sort mode                                                                
+  m    move           tools                                                     
                       C    cull dead links                                      
                                                                                 
                                                                                 

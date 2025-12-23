@@ -474,6 +474,49 @@ func (a *App) buildFolderStack(parentID *string) {
 	a.browser.FolderStack = path
 }
 
+// getItemsForSource returns items based on the given list source.
+func (a *App) getItemsForSource(source ListSource) []Item {
+	var items []Item
+
+	switch source {
+	case SourceAll:
+		// All items (folders + bookmarks) for global search
+		for i := range a.store.Folders {
+			items = append(items, Item{
+				Kind:   ItemFolder,
+				Folder: &a.store.Folders[i],
+			})
+		}
+		for i := range a.store.Bookmarks {
+			items = append(items, Item{
+				Kind:     ItemBookmark,
+				Bookmark: &a.store.Bookmarks[i],
+			})
+		}
+
+	case SourceRecent:
+		// Bookmarks only, sorted by CreatedAt descending
+		// First collect all bookmarks
+		bookmarks := make([]model.Bookmark, len(a.store.Bookmarks))
+		copy(bookmarks, a.store.Bookmarks)
+
+		// Sort by CreatedAt descending (newest first)
+		sort.Slice(bookmarks, func(i, j int) bool {
+			return bookmarks[i].CreatedAt.After(bookmarks[j].CreatedAt)
+		})
+
+		// Convert to Items
+		for i := range bookmarks {
+			items = append(items, Item{
+				Kind:     ItemBookmark,
+				Bookmark: &bookmarks[i],
+			})
+		}
+	}
+
+	return items
+}
+
 // updateFuzzyMatches performs fuzzy matching on allItems with the current query.
 func (a *App) updateFuzzyMatches() {
 	query := a.search.Input.Value()
@@ -900,25 +943,24 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		switch {
 		case key.Matches(msg, a.keys.Search):
-			// Open fuzzy finder mode with GLOBAL search
+			// Open fuzzy finder mode with GLOBAL search (all items)
 			a.mode = ModeSearch
+			a.search.Source = SourceAll
 			a.search.Input.Reset()
 			a.search.Input.Focus()
 			a.search.FuzzyCursor = 0
-			// Gather ALL items from the entire store for fuzzy matching
-			a.search.AllItems = []Item{}
-			for i := range a.store.Folders {
-				a.search.AllItems = append(a.search.AllItems, Item{
-					Kind:   ItemFolder,
-					Folder: &a.store.Folders[i],
-				})
-			}
-			for i := range a.store.Bookmarks {
-				a.search.AllItems = append(a.search.AllItems, Item{
-					Kind:     ItemBookmark,
-					Bookmark: &a.store.Bookmarks[i],
-				})
-			}
+			a.search.AllItems = a.getItemsForSource(SourceAll)
+			a.updateFuzzyMatches()
+			return a, a.search.Input.Focus()
+
+		case key.Matches(msg, a.keys.Recent):
+			// Open fuzzy finder mode with RECENT bookmarks (sorted by creation date)
+			a.mode = ModeSearch
+			a.search.Source = SourceRecent
+			a.search.Input.Reset()
+			a.search.Input.Focus()
+			a.search.FuzzyCursor = 0
+			a.search.AllItems = a.getItemsForSource(SourceRecent)
 			a.updateFuzzyMatches()
 			return a, a.search.Input.Focus()
 
