@@ -387,12 +387,12 @@ func (a App) renderModal() string {
 
 	modalContent := a.styles.Title.Render(title.String()) + content.String()
 
-	// Place modal in center, then add help bar at bottom
+	// Place modal at top (fixed position prevents layout shift from autocomplete)
 	modal := lipgloss.Place(
 		a.width,
 		a.height-3, // Leave room for help bar
 		lipgloss.Center,
-		lipgloss.Center,
+		lipgloss.Top,
 		modalStyle.Render(modalContent),
 	)
 
