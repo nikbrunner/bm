@@ -216,7 +216,7 @@ func (a App) renderModal() string {
 				if i == a.modal.TagSuggestionIdx {
 					content.WriteString(a.styles.ItemSelected.Render("▸ " + tag))
 				} else {
-					content.WriteString(a.styles.Help.Render("  " + tag))
+					content.WriteString(a.styles.Empty.Render("  " + tag))
 				}
 				content.WriteString("\n")
 			}
@@ -246,7 +246,7 @@ func (a App) renderModal() string {
 				if i == a.modal.TagSuggestionIdx {
 					content.WriteString(a.styles.ItemSelected.Render("▸ " + tag))
 				} else {
-					content.WriteString(a.styles.Help.Render("  " + tag))
+					content.WriteString(a.styles.Empty.Render("  " + tag))
 				}
 				content.WriteString("\n")
 			}
