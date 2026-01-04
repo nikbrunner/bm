@@ -666,11 +666,19 @@ func (a App) renderFuzzyFinder() string {
 	if len(a.search.FuzzyMatches) > 0 && a.search.FuzzyCursor < len(a.search.FuzzyMatches) {
 		selectedItem := a.search.FuzzyMatches[a.search.FuzzyCursor].Item
 		if selectedItem.IsFolder() {
-			preview.WriteString(selectedItem.Folder.Name + "/")
-			preview.WriteString("\n\n")
 			folderID := selectedItem.Folder.ID
 			children := a.getItemsForFolder(&folderID)
-			preview.WriteString(a.styles.Empty.Render(fmt.Sprintf("%d items", len(children))))
+			if len(children) == 0 {
+				preview.WriteString(a.styles.Empty.Render("(empty folder)"))
+			} else {
+				// Show folder contents (limited to available height)
+				for i, child := range children {
+					if i >= listHeight {
+						break
+					}
+					preview.WriteString(a.renderItem(child, false, previewItemWidth) + "\n")
+				}
+			}
 		} else {
 			b := selectedItem.Bookmark
 			preview.WriteString(a.styles.Title.Render(b.Title))
