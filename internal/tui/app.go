@@ -1038,6 +1038,14 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.collectAllTags()
 			a.modal.TagSuggestions = nil
 			a.modal.TagSuggestionIdx = -1
+			// Pre-fill URL from clipboard if it looks like a URL
+			if clipContent, err := clipboard.ReadAll(); err == nil {
+				clipContent = strings.TrimSpace(clipContent)
+				if parsedURL, err := url.Parse(clipContent); err == nil &&
+					(parsedURL.Scheme == "http" || parsedURL.Scheme == "https") {
+					a.modal.URLInput.SetValue(clipContent)
+				}
+			}
 			a.modal.URLInput.Blur()
 			a.modal.TagsInput.Blur()
 			a.modal.TitleInput.Focus()
