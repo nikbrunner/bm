@@ -9,8 +9,8 @@ import (
 
 // Config holds application configuration.
 type Config struct {
-	QuickAddFolder      string   `json:"quickAddFolder"`
-	CullExcludeDomains  []string `json:"cullExcludeDomains"`
+	QuickAddFolder     string   `json:"quickAddFolder"`
+	CullExcludeDomains []string `json:"cullExcludeDomains"`
 }
 
 // DefaultConfig returns the default configuration.

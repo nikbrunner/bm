@@ -96,7 +96,6 @@ const (
 	ModeAddFolder
 	ModeEditFolder
 	ModeEditBookmark
-	ModeEditTags
 	ModeConfirmDelete
 	ModeSearch
 	ModeFilter // Local filter for current folder
@@ -119,7 +118,7 @@ const (
 // hasTextInput returns true if the mode has an active text input where 'q' shouldn't quit.
 func (m Mode) hasTextInput() bool {
 	switch m {
-	case ModeAddBookmark, ModeAddFolder, ModeEditFolder, ModeEditBookmark, ModeEditTags,
+	case ModeAddBookmark, ModeAddFolder, ModeEditFolder, ModeEditBookmark,
 		ModeSearch, ModeFilter, ModeQuickAdd, ModeQuickAddConfirm, ModeMove:
 		return true
 	}
@@ -1035,6 +1034,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.mode = ModeAddBookmark
 			a.modal.TitleInput.Reset()
 			a.modal.URLInput.Reset()
+			a.modal.TagsInput.Reset()
+			a.collectAllTags()
+			a.modal.TagSuggestions = nil
+			a.modal.TagSuggestionIdx = -1
 			a.modal.TitleInput.Focus()
 			return a, a.modal.TitleInput.Focus()
 
@@ -1299,32 +1302,14 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.modal.TitleInput.SetValue(item.Bookmark.Title)
 				a.modal.URLInput.Reset()
 				a.modal.URLInput.SetValue(item.Bookmark.URL)
+				a.modal.TagsInput.Reset()
+				a.modal.TagsInput.SetValue(strings.Join(item.Bookmark.Tags, ", "))
+				a.collectAllTags()
+				a.modal.TagSuggestions = nil
+				a.modal.TagSuggestionIdx = -1
 				a.modal.TitleInput.Focus()
 				return a, a.modal.TitleInput.Focus()
 			}
-
-		case key.Matches(msg, a.keys.EditTags):
-			// Only edit tags on bookmarks
-			displayItems := a.getDisplayItems()
-			if len(displayItems) == 0 || a.browser.Cursor >= len(displayItems) {
-				return a, nil
-			}
-			item := displayItems[a.browser.Cursor]
-			if item.IsFolder() {
-				// Folders don't have tags
-				return a, nil
-			}
-			a.mode = ModeEditTags
-			a.modal.EditItemID = item.Bookmark.ID
-			a.modal.TagsInput.Reset()
-			// Convert tags slice to comma-separated string
-			a.modal.TagsInput.SetValue(strings.Join(item.Bookmark.Tags, ", "))
-			a.modal.TagsInput.Focus()
-			// Initialize tag autocompletion
-			a.collectAllTags()
-			a.modal.TagSuggestions = nil
-			a.modal.TagSuggestionIdx = -1
-			return a, a.modal.TagsInput.Focus()
 
 		case key.Matches(msg, a.keys.YankURL):
 			// Yank URL to clipboard
@@ -2135,6 +2120,11 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					a.modal.EditItemID = selectedItem.Bookmark.ID
 					a.modal.TitleInput.SetValue(selectedItem.Bookmark.Title)
 					a.modal.URLInput.SetValue(selectedItem.Bookmark.URL)
+					a.modal.TagsInput.Reset()
+					a.modal.TagsInput.SetValue(strings.Join(selectedItem.Bookmark.Tags, ", "))
+					a.collectAllTags()
+					a.modal.TagSuggestions = nil
+					a.modal.TagSuggestionIdx = -1
 					a.modal.TitleInput.Focus()
 					return a, a.modal.TitleInput.Focus()
 				}
@@ -2468,6 +2458,14 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case tea.KeyEnter:
+		// Handle tag suggestion insertion in bookmark modals
+		if (a.mode == ModeAddBookmark || a.mode == ModeEditBookmark) &&
+			a.modal.TagsInput.Focused() &&
+			a.modal.TagSuggestionIdx >= 0 &&
+			len(a.modal.TagSuggestions) > 0 {
+			a.insertTagSuggestion()
+			return a, nil
+		}
 		// Submit modal
 		return a.submitModal()
 	}
@@ -2476,17 +2474,47 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	switch a.mode {
 	case ModeAddBookmark, ModeEditBookmark:
-		// Handle Tab to switch between inputs
+		// Handle Tab to cycle between inputs: Title → URL → Tags → Title
 		if msg.Type == tea.KeyTab {
 			if a.modal.TitleInput.Focused() {
 				a.modal.TitleInput.Blur()
 				a.modal.URLInput.Focus()
 				return a, a.modal.URLInput.Focus()
-			} else {
+			} else if a.modal.URLInput.Focused() {
 				a.modal.URLInput.Blur()
+				a.modal.TagsInput.Focus()
+				return a, a.modal.TagsInput.Focus()
+			} else {
+				// TagsInput focused - cycle back to Title
+				a.modal.TagsInput.Blur()
 				a.modal.TitleInput.Focus()
 				return a, a.modal.TitleInput.Focus()
 			}
+		}
+
+		// Handle tag autocomplete when TagsInput is focused
+		if a.modal.TagsInput.Focused() {
+			// Up/Down navigate suggestions
+			if msg.Type == tea.KeyUp && len(a.modal.TagSuggestions) > 0 {
+				if a.modal.TagSuggestionIdx > 0 {
+					a.modal.TagSuggestionIdx--
+				} else {
+					a.modal.TagSuggestionIdx = len(a.modal.TagSuggestions) - 1
+				}
+				return a, nil
+			}
+			if msg.Type == tea.KeyDown && len(a.modal.TagSuggestions) > 0 {
+				a.modal.TagSuggestionIdx++
+				if a.modal.TagSuggestionIdx >= len(a.modal.TagSuggestions) {
+					a.modal.TagSuggestionIdx = 0
+				}
+				return a, nil
+			}
+
+			// Update tags input and refresh suggestions
+			a.modal.TagsInput, cmd = a.modal.TagsInput.Update(msg)
+			a.updateTagSuggestions()
+			return a, cmd
 		}
 
 		if a.modal.TitleInput.Focused() {
@@ -2496,41 +2524,6 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case ModeAddFolder, ModeEditFolder:
 		a.modal.TitleInput, cmd = a.modal.TitleInput.Update(msg)
-	case ModeEditTags:
-		// Handle Tab for tag autocompletion
-		if msg.Type == tea.KeyTab {
-			if len(a.modal.TagSuggestions) > 0 {
-				// Cycle through suggestions
-				a.modal.TagSuggestionIdx++
-				if a.modal.TagSuggestionIdx >= len(a.modal.TagSuggestions) {
-					a.modal.TagSuggestionIdx = 0
-				}
-				// Insert selected suggestion
-				a.insertTagSuggestion()
-				return a, nil
-			}
-		}
-
-		// Handle up/down for suggestion navigation
-		if msg.Type == tea.KeyUp && len(a.modal.TagSuggestions) > 0 {
-			if a.modal.TagSuggestionIdx > 0 {
-				a.modal.TagSuggestionIdx--
-			} else {
-				a.modal.TagSuggestionIdx = len(a.modal.TagSuggestions) - 1
-			}
-			return a, nil
-		}
-		if msg.Type == tea.KeyDown && len(a.modal.TagSuggestions) > 0 {
-			a.modal.TagSuggestionIdx++
-			if a.modal.TagSuggestionIdx >= len(a.modal.TagSuggestions) {
-				a.modal.TagSuggestionIdx = 0
-			}
-			return a, nil
-		}
-
-		// Update input and then update suggestions
-		a.modal.TagsInput, cmd = a.modal.TagsInput.Update(msg)
-		a.updateTagSuggestions()
 	}
 
 	return a, cmd
@@ -2566,12 +2559,24 @@ func (a App) submitModal() (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 
+		// Parse comma-separated tags
+		var tags []string
+		tagsStr := a.modal.TagsInput.Value()
+		if tagsStr != "" {
+			for _, tag := range strings.Split(tagsStr, ",") {
+				tag = strings.TrimSpace(tag)
+				if tag != "" {
+					tags = append(tags, tag)
+				}
+			}
+		}
+
 		// Create and add the bookmark
 		newBookmark := model.NewBookmark(model.NewBookmarkParams{
 			Title:    title,
 			URL:      url,
 			FolderID: a.browser.CurrentFolderID,
-			Tags:     []string{},
+			Tags:     tags,
 		})
 		a.store.AddBookmark(newBookmark)
 		a.saveStore()
@@ -2605,21 +2610,9 @@ func (a App) submitModal() (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 
-		// Find and update the bookmark
-		bookmark := a.store.GetBookmarkByID(a.modal.EditItemID)
-		if bookmark != nil {
-			bookmark.Title = title
-			bookmark.URL = url
-		}
-		a.saveStore()
-		a.refreshItems()
-		a.mode = ModeNormal
-		return a, nil
-
-	case ModeEditTags:
 		// Parse comma-separated tags
-		tagsStr := a.modal.TagsInput.Value()
 		var tags []string
+		tagsStr := a.modal.TagsInput.Value()
 		if tagsStr != "" {
 			for _, tag := range strings.Split(tagsStr, ",") {
 				tag = strings.TrimSpace(tag)
@@ -2632,6 +2625,8 @@ func (a App) submitModal() (tea.Model, tea.Cmd) {
 		// Find and update the bookmark
 		bookmark := a.store.GetBookmarkByID(a.modal.EditItemID)
 		if bookmark != nil {
+			bookmark.Title = title
+			bookmark.URL = url
 			bookmark.Tags = tags
 		}
 		a.saveStore()
@@ -3881,6 +3876,11 @@ func (a *App) cullEditItem() (tea.Model, tea.Cmd) {
 	a.modal.TitleInput.SetValue(result.Bookmark.Title)
 	a.modal.URLInput.Reset()
 	a.modal.URLInput.SetValue(result.Bookmark.URL)
+	a.modal.TagsInput.Reset()
+	a.modal.TagsInput.SetValue(strings.Join(result.Bookmark.Tags, ", "))
+	a.collectAllTags()
+	a.modal.TagSuggestions = nil
+	a.modal.TagSuggestionIdx = -1
 	a.modal.TitleInput.Focus()
 	return a, a.modal.TitleInput.Focus()
 }

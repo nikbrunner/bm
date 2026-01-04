@@ -89,8 +89,6 @@ func (a App) getContextualHints() HintSet {
 		return a.getBookmarkFormHints()
 	case ModeAddFolder, ModeEditFolder:
 		return a.getFolderFormHints()
-	case ModeEditTags:
-		return a.getTagsFormHints()
 	case ModeConfirmDelete:
 		return a.getConfirmDeleteHints()
 	case ModeMove:
@@ -203,7 +201,7 @@ func (a App) getSearchModeHints() HintSet {
 
 // getBookmarkFormHints returns hints for ModeAddBookmark/ModeEditBookmark.
 func (a App) getBookmarkFormHints() HintSet {
-	return HintSet{
+	hints := HintSet{
 		Nav: []Hint{
 			{Key: "Tab", Desc: "next"},
 		},
@@ -214,6 +212,12 @@ func (a App) getBookmarkFormHints() HintSet {
 			{Key: "Esc", Desc: "cancel"},
 		},
 	}
+	// Add suggestion hints if tag field is focused and has suggestions
+	if a.modal.TagsInput.Focused() && len(a.modal.TagSuggestions) > 0 {
+		hints.Nav = append(hints.Nav, Hint{Key: "↑/↓", Desc: "suggest"})
+		hints.Action[0] = Hint{Key: "Enter", Desc: "insert/save"}
+	}
+	return hints
 }
 
 // getFolderFormHints returns hints for ModeAddFolder/ModeEditFolder.
@@ -226,26 +230,6 @@ func (a App) getFolderFormHints() HintSet {
 			{Key: "Esc", Desc: "cancel"},
 		},
 	}
-}
-
-// getTagsFormHints returns hints for ModeEditTags.
-func (a App) getTagsFormHints() HintSet {
-	hints := HintSet{
-		Action: []Hint{
-			{Key: "Enter", Desc: "save"},
-		},
-		System: []Hint{
-			{Key: "Esc", Desc: "cancel"},
-		},
-	}
-	// Add suggestion hints if suggestions are available
-	if len(a.modal.TagSuggestions) > 0 {
-		hints.Nav = []Hint{
-			{Key: "↑/↓", Desc: "suggest"},
-			{Key: "Tab", Desc: "accept"},
-		}
-	}
-	return hints
 }
 
 // getConfirmDeleteHints returns hints for ModeConfirmDelete.

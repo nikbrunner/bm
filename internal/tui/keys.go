@@ -20,7 +20,6 @@ type KeyMap struct {
 	QuickAdd     key.Binding
 	ReadLater    key.Binding
 	Edit         key.Binding
-	EditTags     key.Binding
 	Open         key.Binding
 	Search       key.Binding
 	Filter       key.Binding
@@ -104,10 +103,6 @@ func DefaultKeyMap() KeyMap {
 		Edit: key.NewBinding(
 			key.WithKeys("e"),
 			key.WithHelp("e", "edit"),
-		),
-		EditTags: key.NewBinding(
-			key.WithKeys("T"),
-			key.WithHelp("T", "edit tags"),
 		),
 		Open: key.NewBinding(
 			key.WithKeys("o"),

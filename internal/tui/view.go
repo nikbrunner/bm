@@ -204,6 +204,23 @@ func (a App) renderModal() string {
 		content.WriteString("\n\n")
 		content.WriteString("URL:\n")
 		content.WriteString(a.modal.URLInput.View())
+		content.WriteString("\n\n")
+		content.WriteString("Tags:\n")
+		content.WriteString(a.modal.TagsInput.View())
+		content.WriteString("\n")
+
+		// Render tag suggestions if any
+		if len(a.modal.TagSuggestions) > 0 {
+			content.WriteString("\n")
+			for i, tag := range a.modal.TagSuggestions {
+				if i == a.modal.TagSuggestionIdx {
+					content.WriteString(a.styles.ItemSelected.Render("▸ " + tag))
+				} else {
+					content.WriteString(a.styles.Help.Render("  " + tag))
+				}
+				content.WriteString("\n")
+			}
+		}
 
 	case ModeEditFolder:
 		title.WriteString("Edit Folder\n\n")
@@ -217,10 +234,8 @@ func (a App) renderModal() string {
 		content.WriteString("\n\n")
 		content.WriteString("URL:\n")
 		content.WriteString(a.modal.URLInput.View())
-
-	case ModeEditTags:
-		title.WriteString("Edit Tags\n\n")
-		content.WriteString("Tags (comma-separated):\n")
+		content.WriteString("\n\n")
+		content.WriteString("Tags:\n")
 		content.WriteString(a.modal.TagsInput.View())
 		content.WriteString("\n")
 
@@ -1098,7 +1113,6 @@ func (a App) renderHelpOverlay() string {
 	right.WriteString("L    read later\n")
 	right.WriteString("O    organize\n")
 	right.WriteString("e    edit\n")
-	right.WriteString("t    tags\n")
 	right.WriteString("y    yank\n")
 	right.WriteString("d    delete\n")
 	right.WriteString("x    cut\n")
