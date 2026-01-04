@@ -1038,6 +1038,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.collectAllTags()
 			a.modal.TagSuggestions = nil
 			a.modal.TagSuggestionIdx = -1
+			a.modal.URLInput.Blur()
+			a.modal.TagsInput.Blur()
 			a.modal.TitleInput.Focus()
 			return a, a.modal.TitleInput.Focus()
 
@@ -1307,6 +1309,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.collectAllTags()
 				a.modal.TagSuggestions = nil
 				a.modal.TagSuggestionIdx = -1
+				a.modal.URLInput.Blur()
+				a.modal.TagsInput.Blur()
 				a.modal.TitleInput.Focus()
 				return a, a.modal.TitleInput.Focus()
 			}
@@ -2125,6 +2129,8 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					a.collectAllTags()
 					a.modal.TagSuggestions = nil
 					a.modal.TagSuggestionIdx = -1
+					a.modal.URLInput.Blur()
+					a.modal.TagsInput.Blur()
 					a.modal.TitleInput.Focus()
 					return a, a.modal.TitleInput.Focus()
 				}
@@ -3881,6 +3887,8 @@ func (a *App) cullEditItem() (tea.Model, tea.Cmd) {
 	a.collectAllTags()
 	a.modal.TagSuggestions = nil
 	a.modal.TagSuggestionIdx = -1
+	a.modal.URLInput.Blur()
+	a.modal.TagsInput.Blur()
 	a.modal.TitleInput.Focus()
 	return a, a.modal.TitleInput.Focus()
 }
