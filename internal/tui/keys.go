@@ -109,8 +109,8 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("o", "open in browser"),
 		),
 		Search: key.NewBinding(
-			key.WithKeys("s"),
-			key.WithHelp("s", "global search"),
+			key.WithKeys("f"),
+			key.WithHelp("f", "find (global)"),
 		),
 		Filter: key.NewBinding(
 			key.WithKeys("/"),

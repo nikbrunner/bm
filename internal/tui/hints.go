@@ -64,7 +64,7 @@ func (h HintSet) All() []Hint {
 // getGlobalHints returns hints for keys that work in any pane/mode.
 func (a App) getGlobalHints() []Hint {
 	return []Hint{
-		{Key: "s", Desc: "search"},
+		{Key: "f", Desc: "find"},
 		{Key: "R", Desc: "recent"},
 		{Key: "/", Desc: "filter"},
 		{Key: "i", Desc: "AI add"},
