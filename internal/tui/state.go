@@ -17,6 +17,22 @@ const (
 	SourceRecent                   // Bookmarks only, sorted by CreatedAt descending
 )
 
+// TagMatchMode controls how multiple tags are matched in search.
+type TagMatchMode int
+
+const (
+	TagMatchAny TagMatchMode = iota // Bookmark must have at least one tag (OR)
+	TagMatchAll                     // Bookmark must have all tags (AND)
+)
+
+// SearchFocusField tracks which input is focused in search mode.
+type SearchFocusField int
+
+const (
+	SearchFocusQuery SearchFocusField = iota // Main search input
+	SearchFocusTags                          // Tag filter input
+)
+
 // QuickAddState holds state for the AI-powered quick add feature.
 type QuickAddState struct {
 	Input           textinput.Model // URL input
@@ -106,6 +122,15 @@ type SearchState struct {
 	FuzzyCursor  int             // Selected index in fuzzy results
 	AllItems     []Item          // Base items for current source
 
+	// Tag filter state
+	TagInput         textinput.Model  // Tag filter input
+	TagFilterMode    TagMatchMode     // ANY (default) or ALL
+	ParsedTags       []string         // Tags parsed from TagInput
+	AllTags          []string         // All unique tags in store
+	TagSuggestions   []string         // Filtered suggestions for current word
+	TagSuggestionIdx int              // Selected suggestion (-1 = none)
+	FocusedField     SearchFocusField // Which input is focused (Query or Tags)
+
 	// Local filter
 	FilterInput   textinput.Model // Filter input for current folder
 	FilterQuery   string          // Active filter query (persists after closing filter)
@@ -119,14 +144,23 @@ func NewSearchState(cfg layout.LayoutConfig) SearchState {
 	searchInput.CharLimit = cfg.Input.SearchCharLimit
 	searchInput.Width = cfg.Input.StandardWidth
 
+	tagInput := textinput.New()
+	tagInput.Placeholder = "tag1, tag2..."
+	tagInput.CharLimit = cfg.Input.TagsCharLimit
+	tagInput.Width = cfg.Input.StandardWidth
+
 	filterInput := textinput.New()
 	filterInput.Placeholder = "Filter..."
 	filterInput.CharLimit = cfg.Input.FilterCharLimit
 	filterInput.Width = cfg.Input.FilterWidth
 
 	return SearchState{
-		Input:       searchInput,
-		FilterInput: filterInput,
+		Input:            searchInput,
+		TagInput:         tagInput,
+		TagFilterMode:    TagMatchAny,
+		TagSuggestionIdx: -1,
+		FocusedField:     SearchFocusQuery,
+		FilterInput:      filterInput,
 	}
 }
 
@@ -136,6 +170,15 @@ func (s *SearchState) ResetGlobalSearch() {
 	s.FuzzyMatches = nil
 	s.AllItems = nil
 	s.FuzzyCursor = 0
+
+	// Reset tag filter state
+	s.TagInput.Reset()
+	s.TagFilterMode = TagMatchAny
+	s.ParsedTags = nil
+	s.AllTags = nil
+	s.TagSuggestions = nil
+	s.TagSuggestionIdx = -1
+	s.FocusedField = SearchFocusQuery
 }
 
 // ResetFilter clears the local filter state.

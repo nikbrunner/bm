@@ -626,6 +626,179 @@ func (a *App) insertTagSuggestion() {
 	a.modal.TagSuggestionIdx = -1
 }
 
+// collectAllTagsForSearch gathers all unique tags from bookmarks into search state.
+func (a *App) collectAllTagsForSearch() {
+	tagSet := make(map[string]bool)
+	for _, b := range a.store.Bookmarks {
+		for _, tag := range b.Tags {
+			tagSet[tag] = true
+		}
+	}
+	a.search.AllTags = make([]string, 0, len(tagSet))
+	for tag := range tagSet {
+		a.search.AllTags = append(a.search.AllTags, tag)
+	}
+	sort.Strings(a.search.AllTags)
+}
+
+// updateSearchTagSuggestions filters tag suggestions based on current word in tag input.
+func (a *App) updateSearchTagSuggestions() {
+	input := a.search.TagInput.Value()
+	lastComma := strings.LastIndex(input, ",")
+	currentWord := input
+	if lastComma >= 0 {
+		currentWord = input[lastComma+1:]
+	}
+	currentWord = strings.TrimSpace(strings.ToLower(currentWord))
+
+	if currentWord == "" {
+		a.search.TagSuggestions = nil
+		a.search.TagSuggestionIdx = -1
+		return
+	}
+
+	// Get already-used tags in current input
+	usedTags := make(map[string]bool)
+	for _, part := range strings.Split(input, ",") {
+		usedTags[strings.TrimSpace(strings.ToLower(part))] = true
+	}
+
+	// Filter tags that start with currentWord and aren't already used
+	a.search.TagSuggestions = nil
+	for _, tag := range a.search.AllTags {
+		tagLower := strings.ToLower(tag)
+		if strings.HasPrefix(tagLower, currentWord) && !usedTags[tagLower] {
+			a.search.TagSuggestions = append(a.search.TagSuggestions, tag)
+		}
+	}
+
+	if a.search.TagSuggestionIdx >= len(a.search.TagSuggestions) {
+		a.search.TagSuggestionIdx = -1
+	}
+}
+
+// insertSearchTagSuggestion inserts the selected tag suggestion into search tag input.
+func (a *App) insertSearchTagSuggestion() {
+	if a.search.TagSuggestionIdx < 0 || a.search.TagSuggestionIdx >= len(a.search.TagSuggestions) {
+		return
+	}
+
+	tag := a.search.TagSuggestions[a.search.TagSuggestionIdx]
+	input := a.search.TagInput.Value()
+	lastComma := strings.LastIndex(input, ",")
+
+	var newValue string
+	if lastComma >= 0 {
+		newValue = input[:lastComma+1] + " " + tag
+	} else {
+		newValue = tag
+	}
+
+	a.search.TagInput.SetValue(newValue)
+	a.search.TagInput.SetCursor(len(newValue))
+	a.search.TagSuggestions = nil
+	a.search.TagSuggestionIdx = -1
+}
+
+// parseSearchTags parses the tag input into individual tags.
+func (a *App) parseSearchTags() {
+	input := a.search.TagInput.Value()
+	if input == "" {
+		a.search.ParsedTags = nil
+		return
+	}
+
+	parts := strings.Split(input, ",")
+	a.search.ParsedTags = make([]string, 0, len(parts))
+	for _, p := range parts {
+		tag := strings.TrimSpace(p)
+		if tag != "" {
+			a.search.ParsedTags = append(a.search.ParsedTags, strings.ToLower(tag))
+		}
+	}
+}
+
+// bookmarkMatchesTags checks if a bookmark matches the tag filter.
+func (a *App) bookmarkMatchesTags(b *model.Bookmark, filterTags []string, mode TagMatchMode) bool {
+	if len(filterTags) == 0 {
+		return true
+	}
+
+	// Build set of bookmark tags (lowercase)
+	bookmarkTags := make(map[string]bool)
+	for _, tag := range b.Tags {
+		bookmarkTags[strings.ToLower(tag)] = true
+	}
+
+	if mode == TagMatchAny {
+		// At least one filter tag must be in bookmark
+		for _, ft := range filterTags {
+			if bookmarkTags[ft] {
+				return true
+			}
+		}
+		return false
+	}
+
+	// TagMatchAll: all filter tags must be in bookmark
+	for _, ft := range filterTags {
+		if !bookmarkTags[ft] {
+			return false
+		}
+	}
+	return true
+}
+
+// updateFuzzyMatchesWithTagFilter applies fuzzy matching and tag filtering.
+func (a *App) updateFuzzyMatchesWithTagFilter() {
+	query := a.search.Input.Value()
+	hasTags := len(a.search.ParsedTags) > 0
+
+	// First, apply text fuzzy matching
+	var baseMatches []fuzzyMatch
+	if query == "" {
+		baseMatches = make([]fuzzyMatch, len(a.search.AllItems))
+		for i, item := range a.search.AllItems {
+			baseMatches[i] = fuzzyMatch{Item: item}
+		}
+	} else {
+		matches := fuzzy.FindFrom(query, itemStrings(a.search.AllItems))
+		baseMatches = make([]fuzzyMatch, len(matches))
+		for i, m := range matches {
+			baseMatches[i] = fuzzyMatch{
+				Item:           a.search.AllItems[m.Index],
+				MatchedIndexes: m.MatchedIndexes,
+				Score:          m.Score,
+			}
+		}
+	}
+
+	// If no tag filter, use base matches
+	if !hasTags {
+		a.search.FuzzyMatches = baseMatches
+		if a.search.FuzzyCursor >= len(a.search.FuzzyMatches) {
+			a.search.FuzzyCursor = 0
+		}
+		return
+	}
+
+	// Apply tag filter (only to bookmarks - folders have no tags)
+	a.search.FuzzyMatches = make([]fuzzyMatch, 0, len(baseMatches))
+	for _, match := range baseMatches {
+		if match.Item.IsFolder() {
+			// Exclude folders when tag filter is active
+			continue
+		}
+		if a.bookmarkMatchesTags(match.Item.Bookmark, a.search.ParsedTags, a.search.TagFilterMode) {
+			a.search.FuzzyMatches = append(a.search.FuzzyMatches, match)
+		}
+	}
+
+	if a.search.FuzzyCursor >= len(a.search.FuzzyMatches) {
+		a.search.FuzzyCursor = 0
+	}
+}
+
 // Cursor returns the current cursor position.
 func (a App) Cursor() int {
 	return a.browser.Cursor
@@ -949,7 +1122,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.search.Input.Focus()
 			a.search.FuzzyCursor = 0
 			a.search.AllItems = a.getItemsForSource(SourceAll)
-			a.updateFuzzyMatches()
+			a.updateFuzzyMatchesWithTagFilter()
 			return a, a.search.Input.Focus()
 
 		case key.Matches(msg, a.keys.Recent):
@@ -960,7 +1133,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.search.Input.Focus()
 			a.search.FuzzyCursor = 0
 			a.search.AllItems = a.getItemsForSource(SourceRecent)
-			a.updateFuzzyMatches()
+			a.updateFuzzyMatchesWithTagFilter()
 			return a, a.search.Input.Focus()
 
 		case key.Matches(msg, a.keys.Filter):
@@ -2017,13 +2190,42 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if a.mode == ModeSearch {
 		switch msg.Type {
 		case tea.KeyEsc:
+			// If tag suggestions shown, dismiss them first
+			if len(a.search.TagSuggestions) > 0 {
+				a.search.TagSuggestions = nil
+				a.search.TagSuggestionIdx = -1
+				return a, nil
+			}
 			// Cancel search
 			a.mode = ModeNormal
-			a.search.FuzzyMatches = nil
-			a.search.AllItems = nil
+			a.search.ResetGlobalSearch()
 			return a, nil
 
+		case tea.KeyTab:
+			// Switch focus between search and tag inputs
+			if a.search.FocusedField == SearchFocusQuery {
+				a.search.FocusedField = SearchFocusTags
+				a.search.Input.Blur()
+				a.collectAllTagsForSearch()
+				return a, a.search.TagInput.Focus()
+			}
+			a.search.FocusedField = SearchFocusQuery
+			a.search.TagInput.Blur()
+			a.search.TagSuggestions = nil
+			a.search.TagSuggestionIdx = -1
+			return a, a.search.Input.Focus()
+
 		case tea.KeyEnter:
+			// If tag suggestions shown and one is selected, insert it
+			if a.search.FocusedField == SearchFocusTags &&
+				a.search.TagSuggestionIdx >= 0 &&
+				a.search.TagSuggestionIdx < len(a.search.TagSuggestions) {
+				a.insertSearchTagSuggestion()
+				a.parseSearchTags()
+				a.updateFuzzyMatchesWithTagFilter()
+				return a, nil
+			}
+
 			// Select highlighted item: navigate to folder or bookmark location
 			if len(a.search.FuzzyMatches) > 0 && a.search.FuzzyCursor < len(a.search.FuzzyMatches) {
 				selectedItem := a.search.FuzzyMatches[a.search.FuzzyCursor].Item
@@ -2070,6 +2272,14 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return a, nil
 
 		case tea.KeyDown:
+			// If tag suggestions shown, navigate them
+			if a.search.FocusedField == SearchFocusTags && len(a.search.TagSuggestions) > 0 {
+				a.search.TagSuggestionIdx++
+				if a.search.TagSuggestionIdx >= len(a.search.TagSuggestions) {
+					a.search.TagSuggestionIdx = 0
+				}
+				return a, nil
+			}
 			// Navigate down in results
 			if len(a.search.FuzzyMatches) > 0 && a.search.FuzzyCursor < len(a.search.FuzzyMatches)-1 {
 				a.search.FuzzyCursor++
@@ -2077,6 +2287,14 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return a, nil
 
 		case tea.KeyUp:
+			// If tag suggestions shown, navigate them
+			if a.search.FocusedField == SearchFocusTags && len(a.search.TagSuggestions) > 0 {
+				a.search.TagSuggestionIdx--
+				if a.search.TagSuggestionIdx < 0 {
+					a.search.TagSuggestionIdx = len(a.search.TagSuggestions) - 1
+				}
+				return a, nil
+			}
 			// Navigate up in results
 			if a.search.FuzzyCursor > 0 {
 				a.search.FuzzyCursor--
@@ -2085,6 +2303,17 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 		// Handle Ctrl+key actions (don't conflict with typing)
+		if msg.Type == tea.KeyCtrlT {
+			// Toggle tag match mode (ANY/ALL)
+			if a.search.TagFilterMode == TagMatchAny {
+				a.search.TagFilterMode = TagMatchAll
+			} else {
+				a.search.TagFilterMode = TagMatchAny
+			}
+			a.updateFuzzyMatchesWithTagFilter()
+			return a, nil
+		}
+
 		if msg.Type == tea.KeyCtrlO {
 			// Open bookmark in browser
 			if len(a.search.FuzzyMatches) > 0 && a.search.FuzzyCursor < len(a.search.FuzzyMatches) {
@@ -2162,7 +2391,7 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					}
 					a.saveStore()
 					a.search.AllItems = a.getItemsForSource(a.search.Source)
-					a.updateFuzzyMatches()
+					a.updateFuzzyMatchesWithTagFilter()
 					if a.search.FuzzyCursor >= len(a.search.FuzzyMatches) && a.search.FuzzyCursor > 0 {
 						a.search.FuzzyCursor--
 					}
@@ -2188,7 +2417,7 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					}
 					a.saveStore()
 					a.search.AllItems = a.getItemsForSource(a.search.Source)
-					a.updateFuzzyMatches()
+					a.updateFuzzyMatchesWithTagFilter()
 					if a.search.FuzzyCursor >= len(a.search.FuzzyMatches) && a.search.FuzzyCursor > 0 {
 						a.search.FuzzyCursor--
 					}
@@ -2215,11 +2444,16 @@ func (a App) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		// Update search input
+		// Update active input based on focus
 		var cmd tea.Cmd
-		a.search.Input, cmd = a.search.Input.Update(msg)
-		// Update fuzzy matches as user types
-		a.updateFuzzyMatches()
+		if a.search.FocusedField == SearchFocusQuery {
+			a.search.Input, cmd = a.search.Input.Update(msg)
+		} else {
+			a.search.TagInput, cmd = a.search.TagInput.Update(msg)
+			a.updateSearchTagSuggestions()
+			a.parseSearchTags()
+		}
+		a.updateFuzzyMatchesWithTagFilter()
 		return a, cmd
 	}
 

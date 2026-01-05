@@ -182,10 +182,18 @@ func (a App) getFilterModeHints() HintSet {
 
 // getSearchModeHints returns hints for ModeSearch (fuzzy finder).
 func (a App) getSearchModeHints() HintSet {
+	navHints := []Hint{
+		{Key: "j/k", Desc: "move"},
+		{Key: "Tab", Desc: "field"},
+	}
+
+	// Add toggle hint when tags are being filtered
+	if len(a.search.ParsedTags) > 0 {
+		navHints = append(navHints, Hint{Key: "^t", Desc: "any/all"})
+	}
+
 	return HintSet{
-		Nav: []Hint{
-			{Key: "j/k", Desc: "move"},
-		},
+		Nav: navHints,
 		Action: []Hint{
 			{Key: "Enter", Desc: "go to"},
 			{Key: "^o", Desc: "open"},

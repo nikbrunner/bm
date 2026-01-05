@@ -690,6 +690,17 @@ func (a App) renderFuzzyFinder() string {
 			preview.WriteString("\n\n")
 			url, _ := layout.TruncateText(b.URL, previewItemWidth, a.layoutConfig.Text)
 			preview.WriteString(a.styles.URL.Render(url))
+
+			// Show folder path (especially useful when tag filtering hides folders)
+			var folderPath string
+			if b.FolderID == nil {
+				folderPath = "/"
+			} else {
+				folderPath = a.store.GetFolderPath(b.FolderID)
+			}
+			preview.WriteString("\n\n")
+			preview.WriteString(a.styles.Empty.Render("in: " + folderPath))
+
 			if len(b.Tags) > 0 {
 				preview.WriteString("\n\n")
 				tags := make([]string, len(b.Tags))
@@ -724,13 +735,58 @@ func (a App) renderFuzzyFinder() string {
 		countStr = "1 result"
 	}
 
-	content := lipgloss.JoinVertical(lipgloss.Left,
-		a.styles.Title.Render(title)+"  "+a.styles.Empty.Render(countStr),
+	// Mode indicator (ANY/ALL) - only show when tags are active
+	var modeIndicator string
+	if len(a.search.ParsedTags) > 0 {
+		if a.search.TagFilterMode == TagMatchAny {
+			modeIndicator = "  " + a.styles.Tag.Render("[ANY]")
+		} else {
+			modeIndicator = "  " + a.styles.Tag.Render("[ALL]")
+		}
+	}
+
+	// Render input rows with cursor on focused input
+	var searchLine, tagsLine string
+	if a.search.FocusedField == SearchFocusQuery {
+		searchLine = "> " + a.search.Input.Value() + "█"
+		tagsLine = a.styles.Empty.Render("# " + a.search.TagInput.Value())
+	} else {
+		searchLine = a.styles.Empty.Render("> " + a.search.Input.Value())
+		tagsLine = "# " + a.search.TagInput.Value() + "█"
+	}
+
+	// Build tag suggestions if any
+	var suggestionsLine string
+	if a.search.FocusedField == SearchFocusTags && len(a.search.TagSuggestions) > 0 {
+		var sb strings.Builder
+		sb.WriteString("  ") // Indent to align with tag input
+		maxSuggestions := 6
+		for i, tag := range a.search.TagSuggestions {
+			if i >= maxSuggestions {
+				break
+			}
+			if i == a.search.TagSuggestionIdx {
+				sb.WriteString(a.styles.ItemSelected.Render(" " + tag + " "))
+			} else {
+				sb.WriteString(" " + tag + " ")
+			}
+		}
+		suggestionsLine = sb.String()
+	}
+
+	// Build content with optional suggestions line
+	contentParts := []string{
+		a.styles.Title.Render(title) + "  " + a.styles.Empty.Render(countStr) + modeIndicator,
 		"",
-		"> "+a.search.Input.Value()+"█",
-		"",
-		panes,
-	)
+		searchLine,
+		tagsLine,
+	}
+	if suggestionsLine != "" {
+		contentParts = append(contentParts, suggestionsLine)
+	}
+	contentParts = append(contentParts, "", panes)
+
+	content := lipgloss.JoinVertical(lipgloss.Left, contentParts...)
 
 	// Top-left aligned, leave room for help bar at bottom
 	main := lipgloss.Place(
