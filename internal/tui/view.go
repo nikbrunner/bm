@@ -13,6 +13,11 @@ import (
 
 // renderView creates the complete Miller columns view.
 func (a App) renderView() string {
+	// Check if terminal is too small
+	if a.width < a.layoutConfig.Pane.MinTerminalWidth || a.height < a.layoutConfig.Pane.MinTerminalHeight {
+		return a.renderTooSmallError()
+	}
+
 	// Check if we're in a modal mode (ModeFilter stays inline, not a modal)
 	if a.mode != ModeNormal && a.mode != ModeFilter {
 		return a.renderModal()
@@ -1658,4 +1663,20 @@ func (a *App) saveStore() {
 	if err := a.storage.Save(a.store); err != nil {
 		a.setMessage(MessageError, "Save failed: "+err.Error())
 	}
+}
+
+// renderTooSmallError displays an error when the terminal is too small.
+func (a App) renderTooSmallError() string {
+	minW := a.layoutConfig.Pane.MinTerminalWidth
+	minH := a.layoutConfig.Pane.MinTerminalHeight
+
+	msg := fmt.Sprintf("Terminal too small\n\nCurrent:  %d×%d\nRequired: %d×%d\n\nResize to continue",
+		a.width, a.height, minW, minH)
+
+	style := lipgloss.NewStyle().
+		Foreground(lipgloss.AdaptiveColor{Light: "#AA3333", Dark: "#FF6666"}).
+		Bold(true).
+		Align(lipgloss.Center)
+
+	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, style.Render(msg))
 }
