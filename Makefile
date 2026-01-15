@@ -2,14 +2,19 @@
 
 # Binary name
 BINARY := bm
+INSTALL_DIR := $(HOME)/.local/bin
 
 # Build the binary
 build:
 	go build -o $(BINARY) ./cmd/bm
 
-# Install to $GOPATH/bin
-install:
-	go install ./cmd/bm
+# Install to ~/.local/bin
+install: build
+	mkdir -p $(INSTALL_DIR)
+	rm -f $(INSTALL_DIR)/$(BINARY)
+	cp $(BINARY) $(INSTALL_DIR)/$(BINARY)
+	xattr -c $(INSTALL_DIR)/$(BINARY) 2>/dev/null || true
+	@echo "Installed $(BINARY) to $(INSTALL_DIR)"
 
 # Run all tests
 test:
@@ -47,7 +52,7 @@ clean:
 help:
 	@echo "Available targets:"
 	@echo "  build              - Build the binary"
-	@echo "  install            - Install to GOPATH/bin"
+	@echo "  install            - Install to ~/.local/bin"
 	@echo "  test               - Run all tests"
 	@echo "  test-v             - Run tests with verbose output"
 	@echo "  test-cover         - Run tests with coverage"
