@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/atotto/clipboard"
@@ -3378,6 +3379,8 @@ func openURLCmd(url string) tea.Cmd {
 			openCmd = exec.Command("open", url)
 		case "linux":
 			openCmd = exec.Command("xdg-open", url)
+			// Detach process so it survives parent exit
+			openCmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 		case "windows":
 			openCmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
 		}
@@ -3410,7 +3413,7 @@ func (a App) openBookmark() (tea.Model, tea.Cmd) {
 		a.refreshItems()
 	}
 
-	return a, openURLCmd(item.Bookmark.URL)
+	return a, tea.Batch(openURLCmd(item.Bookmark.URL), tea.Quit)
 }
 
 // clipboardSuccessMsg is sent when clipboard write succeeds.
